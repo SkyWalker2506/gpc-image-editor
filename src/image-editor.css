@@ -157,3 +157,37 @@
   background: var(--ie-accent) !important; color: #1a1300 !important;
   border-color: var(--ie-accent-strong) !important;
 }
+
+/* M2/M3 — palette swatches */
+.gpc-ie-swatches {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 3px;
+  margin: 4px 0;
+}
+.gpc-ie-swatch {
+  width: 100%;
+  aspect-ratio: 1;
+  border: 1px solid var(--ie-line-str);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+.gpc-ie-swatch:hover { transform: scale(1.1); border-color: var(--ie-accent); }
+
+/* M3 — layers */
+.gpc-ie-layer {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px;
+  margin: 2px 0;
+  background: var(--ie-bg);
+  border: 1px solid var(--ie-line);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+}
+.gpc-ie-layer.active { border-color: var(--ie-accent); background: var(--ie-bg-hi); }
+.gpc-ie-layer-name { flex: 1; font-weight: 600; }
+.gpc-ie-layer input[type=range] { width: 60px; }

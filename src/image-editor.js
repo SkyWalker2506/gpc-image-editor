@@ -78,7 +78,7 @@
     s1.drawImage(img, crop.x, crop.y, crop.w, crop.h, 0, 0, crop.w, crop.h);
 
     if (Array.isArray(e.pixelOps) && e.pixelOps.length) {
-      try { applyPixelOps(s1, stage1.width, stage1.height, e.pixelOps); }
+      try { applyPixelOps(s1, stage1.width, stage1.height, e.pixelOps, e._layers); }
       catch (_) {}
     }
 
@@ -118,17 +118,109 @@
   function clampN(v, lo, hi) { v = Number(v); if (!isFinite(v)) return lo; return Math.max(lo, Math.min(hi, v)); }
 
   // ---- Pixel-op pipeline (replays bgRemove / erase / fill stamps) ---------
-  function applyPixelOps(ctx, w, h, ops) {
-    const id = ctx.getImageData(0, 0, w, h);
-    const px = id.data;
-    for (const op of ops) {
+  function applyPixelOps(ctx, w, h, ops, layers) {
+    const visibleLayers = layers ? new Set(layers.filter(l => l.visible !== false).map(l => l.id)) : null;
+    let mode = 'px';                                // 'px' for raw imageData ops, 'cv' for canvas2D ops
+    let id = null, px = null;
+    const flushPx = () => { if (mode === 'px' && id) { ctx.putImageData(id, 0, 0); id = null; px = null; } };
+    const ensurePx = () => {
+      if (mode !== 'px') { mode = 'px'; }
+      if (!id) { id = ctx.getImageData(0, 0, w, h); px = id.data; }
+    };
+    const ensureCv = () => { if (mode !== 'cv') { flushPx(); mode = 'cv'; } };
+
+    for (const op of ops || []) {
       if (!op || !op.type) continue;
-      if (op.type === 'bgRemove')      pxBgRemove(px, w, h, op);
-      else if (op.type === 'fill')     pxFill(px, w, h, op);
-      else if (op.type === 'erase')    pxErase(px, w, h, op);
-      else if (op.type === 'bgRemoveColor') pxBgRemoveColor(px, w, h, op);
+      if (visibleLayers && !visibleLayers.has(op.layer || 'base')) continue;
+      switch (op.type) {
+        case 'bgRemove':       ensurePx(); pxBgRemove(px, w, h, op); break;
+        case 'fill':           ensurePx(); pxFill(px, w, h, op); break;
+        case 'erase':          ensurePx(); pxErase(px, w, h, op); break;
+        case 'bgRemoveColor':  ensurePx(); pxBgRemoveColor(px, w, h, op); break;
+        case 'paint':          ensureCv(); cvPaint(ctx, op); break;
+        case 'line':           ensureCv(); cvLine(ctx, op); break;
+        case 'rect':           ensureCv(); cvRect(ctx, op); break;
+        case 'circle':         ensureCv(); cvCircle(ctx, op); break;
+        case 'gradient':       ensureCv(); cvGradient(ctx, op); break;
+        case 'paste':          ensureCv(); cvPaste(ctx, op); break;
+        case 'eraseRegion':    ensureCv(); cvEraseRegion(ctx, op); break;
+      }
     }
-    ctx.putImageData(id, 0, 0);
+    flushPx();
+  }
+
+  function rgbaArrayToCss(c) {
+    if (!c) return 'rgba(0,0,0,1)';
+    return 'rgba(' + (c[0]|0) + ',' + (c[1]|0) + ',' + (c[2]|0) + ',' + ((c[3] == null ? 255 : c[3]) / 255) + ')';
+  }
+  function cvPaint(ctx, op) {
+    ctx.save();
+    ctx.fillStyle = rgbaArrayToCss(op.color);
+    ctx.beginPath(); ctx.arc(op.x, op.y, Math.max(1, +op.radius || 4), 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  function cvLine(ctx, op) {
+    ctx.save();
+    ctx.strokeStyle = rgbaArrayToCss(op.color); ctx.lineWidth = Math.max(1, +op.width || 1);
+    ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(op.x1, op.y1); ctx.lineTo(op.x2, op.y2); ctx.stroke();
+    ctx.restore();
+  }
+  function cvRect(ctx, op) {
+    ctx.save();
+    if (op.filled) { ctx.fillStyle = rgbaArrayToCss(op.color); ctx.fillRect(op.x, op.y, op.w, op.h); }
+    else { ctx.strokeStyle = rgbaArrayToCss(op.color); ctx.lineWidth = Math.max(1, +op.width || 1); ctx.strokeRect(op.x, op.y, op.w, op.h); }
+    ctx.restore();
+  }
+  function cvCircle(ctx, op) {
+    ctx.save();
+    ctx.beginPath(); ctx.arc(op.cx, op.cy, Math.max(1, +op.r || 1), 0, Math.PI * 2);
+    if (op.filled) { ctx.fillStyle = rgbaArrayToCss(op.color); ctx.fill(); }
+    else { ctx.strokeStyle = rgbaArrayToCss(op.color); ctx.lineWidth = Math.max(1, +op.width || 1); ctx.stroke(); }
+    ctx.restore();
+  }
+  function cvGradient(ctx, op) {
+    ctx.save();
+    let g;
+    if (op.gtype === 'radial') {
+      const r = Math.hypot(op.x2 - op.x1, op.y2 - op.y1);
+      g = ctx.createRadialGradient(op.x1, op.y1, 0, op.x1, op.y1, Math.max(1, r));
+    } else {
+      g = ctx.createLinearGradient(op.x1, op.y1, op.x2, op.y2);
+    }
+    g.addColorStop(0, op.colorA || '#ffffff');
+    g.addColorStop(1, op.colorB || '#000000');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    ctx.restore();
+  }
+  function cvPaste(ctx, op) {
+    if (!op.dataUrl) return;
+    if (!op._img) {
+      const im = new Image();
+      im.src = op.dataUrl;
+      op._img = im;
+    }
+    if (op._img.complete && op._img.naturalWidth) {
+      ctx.drawImage(op._img, op.x, op.y, op.w || op._img.naturalWidth, op.h || op._img.naturalHeight);
+    } else {
+      // Schedule re-render once loaded
+      op._img.onload = () => { if (op._onReady) op._onReady(); };
+    }
+  }
+  function cvEraseRegion(ctx, op) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillStyle = '#000';
+    if (op.shape === 'rect') {
+      ctx.fillRect(op.x, op.y, op.w, op.h);
+    } else if (op.shape === 'lasso' && Array.isArray(op.points)) {
+      ctx.beginPath();
+      for (let i = 0; i < op.points.length; i++) {
+        const [x, y] = op.points[i];
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
   }
 
   // Flood-fill alpha=0 from (x,y), tolerance 0..255, 4-connected.
@@ -349,6 +441,20 @@
     let toleranceBg = 32;
     let toleranceFill = 16;
 
+    // M2/M3 state — selection, clipboard, layers, palette
+    const PALETTE_DEFAULT = ['#000000','#ffffff','#ff3b30','#ff9500','#ffcc00','#34c759','#00c7be','#007aff','#5856d6','#af52de','#ff2d55','#a2845e'];
+    const colorHistory = [];
+    let strokeWidth = 4;
+    let shapeFilled = false;
+    let selection = null;        // { type:'rect',x,y,w,h } | { type:'lasso', points:[[x,y]…] } in source-image space
+    let lassoPts = null;         // freehand in-progress
+    let shapeStart = null;       // { x, y } in source-image space
+    let shapeEnd = null;
+    let clipboard = null;        // { dataUrl, w, h, srcX, srcY }
+    let pasteFloat = null;       // { dataUrl, x, y, w, h, img }
+    let layers = [{ id: 'base', name: 'Base', visible: true, opacity: 1, locked: true }];
+    let activeLayerId = 'base';
+
     // Slice state
     let sliceMode = 'grid';   // grid | anim | auto
     let sliceParams = {
@@ -402,12 +508,19 @@
         <div class="gpc-ie-toolbar">
           <div class="gpc-ie-group">
             <label>Tool</label>
-            <button data-ie-tool="crop"      title="Crop / select">▭</button>
-            <button data-ie-tool="bgRemove"  title="Magic-wand bg remove">✦</button>
-            <button data-ie-tool="eyedrop"   title="Eyedropper">⊙</button>
-            <button data-ie-tool="erase"     title="Eraser">⌫</button>
-            <button data-ie-tool="fill"      title="Fill bucket">▣</button>
-            <button data-ie-tool="slice"     title="Slice mode">⊞</button>
+            <button data-ie-tool="crop"      title="Crop / select (C)">▭</button>
+            <button data-ie-tool="rectsel"   title="Rect Select (M)">⊟</button>
+            <button data-ie-tool="lasso"     title="Lasso Select (L)">◌</button>
+            <button data-ie-tool="bgRemove"  title="Magic-wand bg remove (W)">✦</button>
+            <button data-ie-tool="eyedrop"   title="Eyedropper (I)">⊙</button>
+            <button data-ie-tool="brush"     title="Brush (B)">✎</button>
+            <button data-ie-tool="erase"     title="Eraser (E)">⌫</button>
+            <button data-ie-tool="fill"      title="Fill bucket (G)">▣</button>
+            <button data-ie-tool="line"      title="Line (U)">╱</button>
+            <button data-ie-tool="rect"      title="Rectangle shape (R)">▢</button>
+            <button data-ie-tool="circle"    title="Circle shape (O)">◯</button>
+            <button data-ie-tool="gradient"  title="Gradient fill (D)">◐</button>
+            <button data-ie-tool="slice"     title="Slice mode (S)">⊞</button>
           </div>
           <div class="gpc-ie-group">
             <label>Aspect</label>
@@ -423,6 +536,12 @@
             <button data-ie="undo" title="Undo">⟲ Undo</button>
             <button data-ie="redo" title="Redo">⟳ Redo</button>
             <button data-ie="reset" title="Reset all edits">↺ Reset</button>
+          </div>
+          <div class="gpc-ie-group">
+            <button data-ie="copy"  title="Copy selection (Cmd/Ctrl+C)">⎘</button>
+            <button data-ie="paste" title="Paste (Cmd/Ctrl+V)">⎗</button>
+            <button data-ie="cut"   title="Cut selection (Cmd/Ctrl+X)">✂</button>
+            <button data-ie="delsel" title="Delete selection (Del)">⊘</button>
           </div>
           <div class="gpc-ie-group gpc-ie-grow"></div>
           <div class="gpc-ie-group">
@@ -480,6 +599,31 @@
             <div class="gpc-ie-row"><label>Saturate</label><input type="range" data-ie="f-sat" min="0" max="2" step="0.01" value="1"></div>
             <div class="gpc-ie-row"><label>Hue</label><input type="range" data-ie="f-hue" min="-180" max="180" step="1" value="0"></div>
           </div>
+          <div class="gpc-ie-panel">
+            <div class="gpc-ie-panel-title">Color Palette</div>
+            <div class="gpc-ie-row"><label>Active</label><input type="color" data-ie="pal-color" value="#ff0055"><input type="number" data-ie="pal-stroke" min="1" max="64" step="1" value="4" title="Stroke/brush width" style="width:48px"></div>
+            <div class="gpc-ie-swatches" data-ie="pal-swatches"></div>
+            <div class="gpc-ie-panel-title" style="margin-top:6px;font-size:9px">Recent</div>
+            <div class="gpc-ie-swatches" data-ie="pal-history"></div>
+          </div>
+          <div class="gpc-ie-panel">
+            <div class="gpc-ie-panel-title">Shape Options</div>
+            <div class="gpc-ie-row"><label><input type="checkbox" data-ie="shape-fill"> Filled</label></div>
+            <div class="gpc-ie-row"><label>Grad type</label>
+              <select data-ie="grad-type"><option value="linear">Linear</option><option value="radial">Radial</option></select>
+            </div>
+            <div class="gpc-ie-row"><label>Grad A</label><input type="color" data-ie="grad-a" value="#ffffff"></div>
+            <div class="gpc-ie-row"><label>Grad B</label><input type="color" data-ie="grad-b" value="#000000"></div>
+          </div>
+          <div class="gpc-ie-panel" data-ie-pane="layers">
+            <div class="gpc-ie-panel-title">Layers</div>
+            <div data-ie="layer-list"></div>
+            <div class="gpc-ie-row" style="display:flex;gap:4px">
+              <button data-ie="layer-add" title="Add layer" style="flex:1">+ Add</button>
+              <button data-ie="layer-del" title="Delete active" style="flex:1">− Del</button>
+              <button data-ie="layer-flat" title="Flatten all to base" style="flex:1">⌂ Flat</button>
+            </div>
+          </div>
         </div>`;
       root.innerHTML = html;
       const $ = (sel) => root.querySelector(sel);
@@ -508,7 +652,24 @@
         sliceModeBtns: root.querySelectorAll('[data-ie-smode]'),
         animCtrls: $('[data-ie="slice-anim-controls"]'),
         animPlay:  $('[data-ie="anim-play"]'),
-        animStop:  $('[data-ie="anim-stop"]')
+        animStop:  $('[data-ie="anim-stop"]'),
+        // M2/M3 — palette + clipboard + layers
+        copy:    $('[data-ie="copy"]'),
+        paste:   $('[data-ie="paste"]'),
+        cut:     $('[data-ie="cut"]'),
+        delsel:  $('[data-ie="delsel"]'),
+        palColor:    $('[data-ie="pal-color"]'),
+        palStroke:   $('[data-ie="pal-stroke"]'),
+        palSwatches: $('[data-ie="pal-swatches"]'),
+        palHistory:  $('[data-ie="pal-history"]'),
+        shapeFill:   $('[data-ie="shape-fill"]'),
+        gradType:    $('[data-ie="grad-type"]'),
+        gradA:       $('[data-ie="grad-a"]'),
+        gradB:       $('[data-ie="grad-b"]'),
+        layerList:   $('[data-ie="layer-list"]'),
+        layerAdd:    $('[data-ie="layer-add"]'),
+        layerDel:    $('[data-ie="layer-del"]'),
+        layerFlat:   $('[data-ie="layer-flat"]')
       };
       return ui;
     }
@@ -562,6 +723,50 @@
       ui.animPlay.addEventListener('click', () => startAnimPreview());
       ui.animStop.addEventListener('click', () => stopAnimPreview());
 
+      // M2/M3 — palette, clipboard, layers, shape options
+      buildSwatches();
+      ui.palColor.addEventListener('input', () => { activeColor = hexToRgb(ui.palColor.value); });
+      ui.palColor.addEventListener('change', () => { pushColorHistory(ui.palColor.value); });
+      ui.palStroke.addEventListener('input', () => { strokeWidth = Math.max(1, +ui.palStroke.value || 1); });
+      ui.palSwatches.addEventListener('click', (ev) => {
+        const sw = ev.target.closest('.gpc-ie-swatch'); if (!sw) return;
+        ui.palColor.value = sw.dataset.color; activeColor = hexToRgb(sw.dataset.color);
+        pushColorHistory(sw.dataset.color);
+      });
+      ui.palHistory.addEventListener('click', (ev) => {
+        const sw = ev.target.closest('.gpc-ie-swatch'); if (!sw) return;
+        ui.palColor.value = sw.dataset.color; activeColor = hexToRgb(sw.dataset.color);
+      });
+      ui.shapeFill.addEventListener('change', () => { shapeFilled = !!ui.shapeFill.checked; });
+
+      ui.copy.addEventListener('click', copySelection);
+      ui.paste.addEventListener('click', pasteClipboard);
+      ui.cut.addEventListener('click', cutSelection);
+      ui.delsel.addEventListener('click', deleteSelection);
+
+      ui.layerAdd.addEventListener('click', () => {
+        const id = 'L' + Date.now().toString(36);
+        if (layers.length >= 3) { flashInfo('Max 3 layers'); return; }
+        layers.push({ id, name: 'Layer ' + layers.length, visible: true, opacity: 1, locked: false });
+        activeLayerId = id; renderLayerList();
+      });
+      ui.layerDel.addEventListener('click', () => {
+        if (activeLayerId === 'base') { flashInfo('Cannot delete base'); return; }
+        // Drop pixelOps tagged with this layer
+        edits.pixelOps = (edits.pixelOps || []).filter(op => (op.layer || 'base') !== activeLayerId);
+        layers = layers.filter(l => l.id !== activeLayerId);
+        activeLayerId = layers[layers.length - 1].id;
+        commit(); renderLayerList();
+      });
+      ui.layerFlat.addEventListener('click', () => {
+        // Move all pixelOps onto base, drop other layers
+        (edits.pixelOps || []).forEach(op => { op.layer = 'base'; });
+        layers = [{ id: 'base', name: 'Base', visible: true, opacity: 1, locked: true }];
+        activeLayerId = 'base';
+        commit(); renderLayerList();
+      });
+      renderLayerList();
+
       ui.canvas.addEventListener('wheel', onWheel, { passive: false });
       ui.canvas.addEventListener('pointerdown', onPointerDown);
       window.addEventListener('pointermove', onPointerMove);
@@ -584,11 +789,11 @@
       });
       ui.paneSlice.style.display = (tool === 'slice') ? '' : 'none';
       renderToolPanel();
-      ui.canvas.style.cursor = tool === 'crop' ? 'crosshair'
-        : tool === 'eyedrop' ? 'cell'
-        : tool === 'erase' ? 'cell'
-        : tool === 'slice' ? 'crosshair'
-        : 'pointer';
+      const cursors = { crop:'crosshair', rectsel:'crosshair', lasso:'crosshair',
+        bgRemove:'cell', eyedrop:'cell', brush:'crosshair', erase:'cell',
+        fill:'cell', line:'crosshair', rect:'crosshair', circle:'crosshair',
+        gradient:'crosshair', slice:'crosshair' };
+      ui.canvas.style.cursor = cursors[tool] || 'pointer';
       render();
     }
 
@@ -685,7 +890,7 @@
 
     function bakedSource() {
       // Source baked with crop+filter+pixelOps applied (no rotate/flip — slice grids assume axis-aligned).
-      const e = { ...edits, rotate: 0, flip: { h: false, v: false }, resize: null };
+      const e = { ...edits, rotate: 0, flip: { h: false, v: false }, resize: null, _layers: layers };
       return applyEditsToCanvas(img, e);
     }
 
@@ -894,6 +1099,57 @@
         for (const h of handles) ctx.fillRect(h.x - 4, h.y - 4, 8, 8);
       }
 
+      // M2 — selection marquee
+      if (selection) {
+        ctx.save();
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+        if (selection.type === 'rect') {
+          ctx.strokeRect(dx + selection.x * zoom + 0.5, dy + selection.y * zoom + 0.5,
+            selection.w * zoom, selection.h * zoom);
+        } else if (selection.type === 'lasso') {
+          ctx.beginPath();
+          for (let i = 0; i < selection.points.length; i++) {
+            const [x, y] = selection.points[i];
+            const sx = dx + x * zoom, sy = dy + y * zoom;
+            if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+          }
+          ctx.closePath(); ctx.stroke();
+        }
+        ctx.restore();
+      }
+      if (lassoPts && lassoPts.length > 1) {
+        ctx.save();
+        ctx.strokeStyle = '#ffd966'; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        for (let i = 0; i < lassoPts.length; i++) {
+          const [x, y] = lassoPts[i];
+          const sx = dx + x * zoom, sy = dy + y * zoom;
+          if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+        }
+        ctx.stroke(); ctx.restore();
+      }
+      // Shape preview while dragging
+      if (shapeStart && shapeEnd && dragging && dragging.indexOf('shape-') === 0) {
+        const sk = dragging.slice(6);
+        const sx = dx + shapeStart.x * zoom, sy = dy + shapeStart.y * zoom;
+        const ex = dx + shapeEnd.x * zoom, ey = dy + shapeEnd.y * zoom;
+        ctx.save();
+        ctx.strokeStyle = rgbToHex(activeColor); ctx.fillStyle = ctx.strokeStyle;
+        ctx.lineWidth = Math.max(1, strokeWidth * zoom);
+        if (sk === 'line') { ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke(); }
+        else if (sk === 'rect') {
+          if (shapeFilled) ctx.fillRect(Math.min(sx,ex), Math.min(sy,ey), Math.abs(ex-sx), Math.abs(ey-sy));
+          else ctx.strokeRect(Math.min(sx,ex), Math.min(sy,ey), Math.abs(ex-sx), Math.abs(ey-sy));
+        } else if (sk === 'circle') {
+          const r = Math.hypot(ex-sx, ey-sy);
+          ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2);
+          if (shapeFilled) ctx.fill(); else ctx.stroke();
+        } else if (sk === 'gradient') {
+          ctx.setLineDash([4, 3]); ctx.strokeStyle = '#34c759';
+          ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
+        }
+        ctx.restore();
+      }
       // Slice overlay (grid lines + numbered cells) when slice tool active
       if (activeTool === 'slice') {
         drawSliceOverlay(ctx, dx, dy, iw, ih);
@@ -1026,8 +1282,37 @@
         try {
           const id = baked.getContext('2d').getImageData(local.x | 0, local.y | 0, 1, 1).data;
           activeColor = [id[0], id[1], id[2], id[3] || 255];
+          const hex = rgbToHex(activeColor); if (ui.palColor) ui.palColor.value = hex;
+          pushColorHistory(hex);
           renderToolPanel();
         } catch (_) {}
+        return;
+      }
+      // M2/M3 — selection tools
+      if (activeTool === 'rectsel') {
+        dragging = 'rectsel';
+        cropDragOrig = { ix: ipt.x, iy: ipt.y };
+        selection = { type: 'rect', x: ipt.x, y: ipt.y, w: 1, h: 1 };
+        return;
+      }
+      if (activeTool === 'lasso') {
+        dragging = 'lasso';
+        lassoPts = [[ipt.x, ipt.y]];
+        return;
+      }
+      // Brush — paint stamp ops
+      if (activeTool === 'brush') {
+        const local = imgPointToCroppedSpace(ipt); if (!local) return;
+        edits.pixelOps.push({ type: 'paint', layer: activeLayerId, x: local.x, y: local.y, radius: strokeWidth, color: activeColor.slice() });
+        dragging = 'brush'; cropDragOrig = {};
+        render(); fire();
+        return;
+      }
+      // Shape tools — defer commit until pointerup
+      if (activeTool === 'line' || activeTool === 'rect' || activeTool === 'circle' || activeTool === 'gradient') {
+        dragging = 'shape-' + activeTool;
+        shapeStart = { x: ipt.x, y: ipt.y };
+        shapeEnd = { x: ipt.x, y: ipt.y };
         return;
       }
 
@@ -1079,9 +1364,29 @@
       const ipt = screenToImg(p.x, p.y);
       if (dragging === 'erase') {
         const local = imgPointToCroppedSpace(ipt); if (!local) return;
-        edits.pixelOps.push({ type: 'erase', x: local.x, y: local.y, radius: brushRadius });
+        edits.pixelOps.push({ type: 'erase', layer: activeLayerId, x: local.x, y: local.y, radius: brushRadius });
         render(); fire();
         return;
+      }
+      if (dragging === 'brush') {
+        const local = imgPointToCroppedSpace(ipt); if (!local) return;
+        edits.pixelOps.push({ type: 'paint', layer: activeLayerId, x: local.x, y: local.y, radius: strokeWidth, color: activeColor.slice() });
+        render(); fire();
+        return;
+      }
+      if (dragging === 'rectsel') {
+        const x = Math.min(cropDragOrig.ix, ipt.x), y = Math.min(cropDragOrig.iy, ipt.y);
+        const w = Math.abs(ipt.x - cropDragOrig.ix), h = Math.abs(ipt.y - cropDragOrig.iy);
+        selection = { type: 'rect', x: Math.round(x), y: Math.round(y), w: Math.max(1, Math.round(w)), h: Math.max(1, Math.round(h)) };
+        render(); return;
+      }
+      if (dragging === 'lasso') {
+        lassoPts.push([ipt.x, ipt.y]);
+        render(); return;
+      }
+      if (dragging && dragging.indexOf('shape-') === 0) {
+        shapeEnd = { x: ipt.x, y: ipt.y };
+        render(); return;
       }
       if (dragging === 'pan') {
         pan.x = cropDragOrig.px + (p.x - cropDragOrig.sx);
@@ -1121,10 +1426,38 @@
     function onPointerUp(ev) {
       if (!dragging) return;
       try { ui.canvas.releasePointerCapture(ev.pointerId); } catch (_) {}
-      const wasCropOrErase = (dragging === 'erase' || dragging.startsWith('crop-'));
+      const wasCropOrErase = (dragging === 'erase' || dragging === 'brush' || dragging.startsWith('crop-'));
+      const wasLasso = dragging === 'lasso';
+      const wasRectSel = dragging === 'rectsel';
+      const wasShape = dragging && dragging.indexOf('shape-') === 0;
+      const shapeKind = wasShape ? dragging.slice(6) : null;
+
       dragging = null;
       cropDragOrig = null;
-      if (wasCropOrErase) commit();
+
+      if (wasLasso && lassoPts && lassoPts.length > 2) {
+        selection = { type: 'lasso', points: lassoPts };
+      }
+      lassoPts = null;
+
+      if (wasShape && shapeStart && shapeEnd) {
+        const cr = edits.crop || { x: 0, y: 0, w: img.naturalWidth, h: img.naturalHeight };
+        const sx = shapeStart.x - cr.x, sy = shapeStart.y - cr.y;
+        const ex = shapeEnd.x - cr.x, ey = shapeEnd.y - cr.y;
+        if (shapeKind === 'line') {
+          edits.pixelOps.push({ type: 'line', layer: activeLayerId, x1: sx, y1: sy, x2: ex, y2: ey, width: strokeWidth, color: activeColor.slice() });
+        } else if (shapeKind === 'rect') {
+          edits.pixelOps.push({ type: 'rect', layer: activeLayerId, x: Math.min(sx,ex), y: Math.min(sy,ey), w: Math.abs(ex-sx), h: Math.abs(ey-sy), filled: shapeFilled, width: strokeWidth, color: activeColor.slice() });
+        } else if (shapeKind === 'circle') {
+          edits.pixelOps.push({ type: 'circle', layer: activeLayerId, cx: sx, cy: sy, r: Math.hypot(ex-sx, ey-sy), filled: shapeFilled, width: strokeWidth, color: activeColor.slice() });
+        } else if (shapeKind === 'gradient') {
+          edits.pixelOps.push({ type: 'gradient', layer: activeLayerId, gtype: ui.gradType.value || 'linear', x1: sx, y1: sy, x2: ex, y2: ey, colorA: ui.gradA.value, colorB: ui.gradB.value });
+        }
+        commit();
+        shapeStart = null; shapeEnd = null;
+        return;
+      }
+      if (wasCropOrErase || wasRectSel) commit();
     }
 
     function clampCrop(c, iw, ih) {
@@ -1139,13 +1472,144 @@
     }
 
     function onKey(ev) {
-      if (!container.contains(document.activeElement) && document.activeElement !== document.body) return;
-      if ((ev.metaKey || ev.ctrlKey) && ev.key === 'z') {
-        ev.preventDefault();
-        if (ev.shiftKey) redoOp(); else undoOp();
-      } else if ((ev.metaKey || ev.ctrlKey) && ev.key === 'y') {
-        ev.preventDefault(); redoOp();
+      const ae = document.activeElement;
+      if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'SELECT' || ae.tagName === 'TEXTAREA')) return;
+      if (!container.contains(ae) && ae !== document.body) return;
+      const cmd = ev.metaKey || ev.ctrlKey;
+      if (cmd && ev.key.toLowerCase() === 'z') { ev.preventDefault(); if (ev.shiftKey) redoOp(); else undoOp(); return; }
+      if (cmd && ev.key.toLowerCase() === 'y') { ev.preventDefault(); redoOp(); return; }
+      if (cmd && ev.key.toLowerCase() === 'c') { ev.preventDefault(); copySelection(); return; }
+      if (cmd && ev.key.toLowerCase() === 'v') { ev.preventDefault(); pasteClipboard(); return; }
+      if (cmd && ev.key.toLowerCase() === 'x') { ev.preventDefault(); cutSelection(); return; }
+      if (ev.key === 'Escape') { selection = null; lassoPts = null; render(); return; }
+      if (ev.key === 'Delete' || ev.key === 'Backspace') { if (selection) { ev.preventDefault(); deleteSelection(); return; } }
+      if (cmd) return;
+      const map = { c: 'crop', m: 'rectsel', l: 'lasso', i: 'eyedrop', b: 'brush', e: 'erase', g: 'fill', w: 'bgRemove', u: 'line', r: 'rect', o: 'circle', d: 'gradient', s: 'slice' };
+      const tool = map[ev.key.toLowerCase()];
+      if (tool) { setActiveTool(tool); ev.preventDefault(); }
+    }
+
+    // ---- M2/M3 helpers ---------------------------------------------------
+    function buildSwatches() {
+      ui.palSwatches.innerHTML = PALETTE_DEFAULT.map(c =>
+        `<div class="gpc-ie-swatch" data-color="${c}" style="background:${c}"></div>`).join('');
+    }
+    function pushColorHistory(c) {
+      if (colorHistory[0] === c) return;
+      colorHistory.unshift(c);
+      while (colorHistory.length > 8) colorHistory.pop();
+      ui.palHistory.innerHTML = colorHistory.map(col =>
+        `<div class="gpc-ie-swatch" data-color="${col}" style="background:${col}"></div>`).join('');
+    }
+    function renderLayerList() {
+      ui.layerList.innerHTML = layers.slice().reverse().map(l => `
+        <div class="gpc-ie-layer ${l.id === activeLayerId ? 'active' : ''}" data-layer-id="${l.id}">
+          <input type="checkbox" data-layer-vis ${l.visible ? 'checked' : ''}>
+          <span class="gpc-ie-layer-name">${l.name}</span>
+          <input type="range" data-layer-op min="0" max="1" step="0.05" value="${l.opacity}" title="Opacity">
+        </div>`).join('');
+      ui.layerList.querySelectorAll('.gpc-ie-layer').forEach(row => {
+        const id = row.dataset.layerId;
+        row.addEventListener('click', (ev) => {
+          if (ev.target.matches('input')) return;
+          activeLayerId = id; renderLayerList();
+        });
+        row.querySelector('[data-layer-vis]').addEventListener('change', (ev) => {
+          const l = layers.find(x => x.id === id); if (l) { l.visible = ev.target.checked; render(); }
+        });
+        row.querySelector('[data-layer-op]').addEventListener('input', (ev) => {
+          const l = layers.find(x => x.id === id); if (l) { l.opacity = +ev.target.value; render(); }
+        });
+      });
+    }
+
+    // Build a per-pixel selection mask in cropped-space coords. Returns canvas (or null = no selection / full).
+    function buildSelectionMask() {
+      if (!selection) return null;
+      const cr = edits.crop || { x: 0, y: 0, w: img.naturalWidth, h: img.naturalHeight };
+      const mask = document.createElement('canvas'); mask.width = cr.w; mask.height = cr.h;
+      const mc = mask.getContext('2d');
+      mc.fillStyle = '#fff';
+      if (selection.type === 'rect') {
+        mc.fillRect(selection.x - cr.x, selection.y - cr.y, selection.w, selection.h);
+      } else {
+        mc.beginPath();
+        for (let i = 0; i < selection.points.length; i++) {
+          const [x, y] = selection.points[i];
+          if (i === 0) mc.moveTo(x - cr.x, y - cr.y); else mc.lineTo(x - cr.x, y - cr.y);
+        }
+        mc.closePath(); mc.fill();
       }
+      return mask;
+    }
+
+    function copySelection() {
+      if (!selection) { flashInfo('No selection'); return; }
+      const baked = bakedSource();
+      // Find bbox
+      let bbox;
+      const cr = edits.crop || { x: 0, y: 0, w: img.naturalWidth, h: img.naturalHeight };
+      if (selection.type === 'rect') {
+        bbox = { x: selection.x - cr.x, y: selection.y - cr.y, w: selection.w, h: selection.h };
+      } else {
+        const xs = selection.points.map(p => p[0] - cr.x), ys = selection.points.map(p => p[1] - cr.y);
+        bbox = { x: Math.floor(Math.min(...xs)), y: Math.floor(Math.min(...ys)),
+                 w: Math.ceil(Math.max(...xs) - Math.min(...xs)),
+                 h: Math.ceil(Math.max(...ys) - Math.min(...ys)) };
+      }
+      bbox.x = Math.max(0, bbox.x); bbox.y = Math.max(0, bbox.y);
+      bbox.w = Math.min(baked.width - bbox.x, Math.max(1, bbox.w));
+      bbox.h = Math.min(baked.height - bbox.y, Math.max(1, bbox.h));
+      const out = document.createElement('canvas'); out.width = bbox.w; out.height = bbox.h;
+      const oc = out.getContext('2d');
+      if (selection.type === 'lasso') {
+        oc.save(); oc.beginPath();
+        for (let i = 0; i < selection.points.length; i++) {
+          const [x, y] = selection.points[i];
+          if (i === 0) oc.moveTo(x - cr.x - bbox.x, y - cr.y - bbox.y); else oc.lineTo(x - cr.x - bbox.x, y - cr.y - bbox.y);
+        }
+        oc.closePath(); oc.clip();
+      }
+      oc.drawImage(baked, bbox.x, bbox.y, bbox.w, bbox.h, 0, 0, bbox.w, bbox.h);
+      if (selection.type === 'lasso') oc.restore();
+      clipboard = { dataUrl: out.toDataURL('image/png'), w: bbox.w, h: bbox.h, srcX: bbox.x, srcY: bbox.y };
+      flashInfo('Copied ' + bbox.w + '×' + bbox.h);
+    }
+    function pasteClipboard() {
+      if (!clipboard) { flashInfo('Clipboard empty'); return; }
+      // Stamp paste op at original position
+      edits.pixelOps.push({
+        type: 'paste',
+        layer: activeLayerId,
+        dataUrl: clipboard.dataUrl,
+        x: clipboard.srcX, y: clipboard.srcY, w: clipboard.w, h: clipboard.h
+      });
+      commit();
+      flashInfo('Pasted');
+    }
+    function cutSelection() {
+      if (!selection) { flashInfo('No selection'); return; }
+      copySelection();
+      deleteSelection();
+    }
+    function deleteSelection() {
+      if (!selection) { flashInfo('No selection'); return; }
+      const cr = edits.crop || { x: 0, y: 0, w: img.naturalWidth, h: img.naturalHeight };
+      const polyPts = selection.type === 'lasso'
+        ? selection.points.map(([x, y]) => [x - cr.x, y - cr.y])
+        : null;
+      edits.pixelOps.push({
+        type: 'eraseRegion',
+        layer: activeLayerId,
+        shape: selection.type,
+        x: selection.type === 'rect' ? selection.x - cr.x : 0,
+        y: selection.type === 'rect' ? selection.y - cr.y : 0,
+        w: selection.type === 'rect' ? selection.w : 0,
+        h: selection.type === 'rect' ? selection.h : 0,
+        points: polyPts
+      });
+      selection = null;
+      commit();
     }
 
     function pushUndo() {
