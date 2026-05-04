@@ -7,7 +7,9 @@
  *     src:       string,             // image src/dataURL to edit
  *     edits:     ImageEdits | null,  // initial edits (crop/resize/rotate/flip/filter/pixelOps)
  *     onChange:  (edits) => void,    // fired on any edit (live)
- *     onApply:   (edits) => void,    // fired when user clicks Apply
+ *     onApply:   ({ edits, pngBlob, pngDataUrl, width, height }) => void, // Apply
+ *                                    // pngBlob/pngDataUrl are the baked output PNG with all
+ *                                    // edits flattened (crop/pixelOps/resize/rotate/filter).
  *     onCancel:  () => void,         // fired when user clicks Cancel
  *     onSliceApply: (payload) => void // fired when user clicks "Apply slice"
  *                                    //   payload = { mode, params, source:{name,w,h},
@@ -689,7 +691,19 @@
         if (edits.crop) { edits.resize = { w: edits.crop.w, h: edits.crop.h }; commit(); syncControls(); }
       });
       ui.cancel.addEventListener('click', () => { if (typeof opts.onCancel === 'function') opts.onCancel(); });
-      ui.apply.addEventListener('click', () => { if (typeof opts.onApply === 'function') opts.onApply(getEdits()); });
+      ui.apply.addEventListener('click', () => {
+        if (typeof opts.onApply !== 'function') return;
+        const e = getEdits();
+        let baked = null;
+        try { baked = applyEditsToCanvas(img, e); } catch (_) {}
+        if (!baked) { opts.onApply({ edits: e, pngBlob: null, pngDataUrl: null, width: 0, height: 0 }); return; }
+        const w = baked.width, h = baked.height;
+        let dataUrl = null;
+        try { dataUrl = baked.toDataURL('image/png'); } catch (_) {}
+        baked.toBlob((blob) => {
+          opts.onApply({ edits: e, pngBlob: blob, pngDataUrl: dataUrl, width: w, height: h });
+        }, 'image/png');
+      });
 
       ui.rw.addEventListener('input', () => onResize('w'));
       ui.rh.addEventListener('input', () => onResize('h'));
