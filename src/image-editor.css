@@ -1,0 +1,145 @@
+/* gpc-image-editor — base styles. Project-agnostic; host can override via
+ * CSS custom properties on `.gpc-ie-root`. */
+.gpc-ie-root {
+  --ie-bg:        #1a1d24;
+  --ie-bg-soft:   #232733;
+  --ie-bg-hi:    #2c313f;
+  --ie-line:      rgba(255,255,255,0.10);
+  --ie-line-str:  rgba(255,255,255,0.20);
+  --ie-ink:       #e8eaf0;
+  --ie-ink-dim:   #9099ad;
+  --ie-accent:    #ffb347;
+  --ie-accent-strong: #ff8a3c;
+
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  grid-template-rows: auto 1fr;
+  grid-template-areas:
+    "toolbar toolbar"
+    "stage   side";
+  gap: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 360px;
+  color: var(--ie-ink);
+  font: 500 12px Fredoka, system-ui, sans-serif;
+  background: var(--ie-bg);
+}
+
+.gpc-ie-toolbar {
+  grid-area: toolbar;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  background: var(--ie-bg-soft);
+  border-bottom: 1px solid var(--ie-line);
+}
+.gpc-ie-group { display: flex; gap: 4px; align-items: center; }
+.gpc-ie-grow { flex: 1; }
+.gpc-ie-toolbar label { color: var(--ie-ink-dim); font-weight: 600; font-size: 11px; }
+
+.gpc-ie-toolbar button,
+.gpc-ie-side button {
+  background: var(--ie-bg-hi);
+  color: var(--ie-ink);
+  border: 1px solid var(--ie-line-str);
+  padding: 6px 10px;
+  border-radius: 5px;
+  font: 700 11px Fredoka, sans-serif;
+  cursor: pointer;
+}
+.gpc-ie-toolbar button:hover,
+.gpc-ie-side button:hover { background: #3a4055; }
+
+.gpc-ie-toolbar .gpc-ie-btn-primary {
+  background: var(--ie-accent);
+  color: #1a1300;
+  border-color: var(--ie-accent-strong);
+}
+.gpc-ie-toolbar .gpc-ie-btn-ghost {
+  background: transparent;
+  border-color: var(--ie-line-str);
+}
+
+.gpc-ie-toolbar select {
+  background: var(--ie-bg-hi);
+  color: var(--ie-ink);
+  border: 1px solid var(--ie-line-str);
+  padding: 5px 6px;
+  border-radius: 4px;
+  font: 600 11px Fredoka, sans-serif;
+}
+
+.gpc-ie-stage {
+  grid-area: stage;
+  position: relative;
+  background: var(--ie-bg);
+  overflow: hidden;
+  min-height: 280px;
+}
+.gpc-ie-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: crosshair;
+  touch-action: none;
+}
+.gpc-ie-stage-info {
+  position: absolute;
+  bottom: 8px;
+  left: 10px;
+  background: rgba(0,0,0,0.55);
+  color: var(--ie-ink);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font: 600 10px Fredoka, sans-serif;
+  pointer-events: none;
+}
+
+.gpc-ie-side {
+  grid-area: side;
+  background: var(--ie-bg-soft);
+  border-left: 1px solid var(--ie-line);
+  padding: 10px;
+  overflow-y: auto;
+}
+.gpc-ie-panel {
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--ie-line);
+}
+.gpc-ie-panel:last-child { border-bottom: 0; }
+.gpc-ie-panel-title {
+  font: 800 10px Fredoka, sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--ie-accent);
+  margin-bottom: 6px;
+}
+.gpc-ie-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 5px 0;
+  font-size: 11px;
+}
+.gpc-ie-row label {
+  flex: 0 0 70px;
+  color: var(--ie-ink-dim);
+  font-weight: 600;
+}
+.gpc-ie-row input[type=number],
+.gpc-ie-row input[type=range] {
+  flex: 1;
+  background: var(--ie-bg);
+  color: var(--ie-ink);
+  border: 1px solid var(--ie-line-str);
+  border-radius: 4px;
+  padding: 4px 6px;
+  font: 600 11px Fredoka, sans-serif;
+}
+.gpc-ie-row input[type=checkbox] { accent-color: var(--ie-accent); }
+.gpc-ie-row button {
+  width: 100%;
+}
