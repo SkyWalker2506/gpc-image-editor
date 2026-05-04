@@ -9,14 +9,51 @@ modifying the original PNG files.
 ## What it does
 
 - Source canvas with checker transparency, mouse-wheel zoom, drag pan.
-- Crop tool: drag a bbox; aspect-lock dropdown (Free / 1:1 / 16:9 / 4:3 / 2:1 / 3:2).
-- Resize: width + height inputs with aspect-lock; Fit-to-crop button.
-- Rotate: 90° increments + free slider (-180…180°).
-- Flip horizontal / vertical.
+- **Tool palette** in the top-left toolbar — switch between:
+  - **Crop** (default): drag a bbox; aspect-lock dropdown (Free / 1:1 / 16:9 / 4:3 / 2:1 / 3:2).
+  - **BG remove (magic wand)**: click a background pixel → flood-fill matching pixels to alpha 0 (tolerance slider).
+  - **Eyedropper**: click a pixel to read RGBA into the active colour.
+  - **Eraser**: brush mode (radius slider, drag to paint pixels to alpha 0).
+  - **Fill bucket**: flood-fill area with active colour (tolerance slider).
+  - **Slice**: split a sprite-sheet into N children (Grid / Anim strip / Auto-detect).
+- Resize, Rotate (90 deg + free slider), Flip horizontal / vertical.
 - Adjustment sliders: brightness, contrast, saturation, hue rotate (CSS-filter
   based, baked into the output canvas at apply time).
 - Undo / redo (Ctrl/Cmd-Z, Ctrl/Cmd-Shift-Z).
 - Apply / Cancel buttons fire user-supplied callbacks with the edits payload.
+
+## Slice mode
+
+Selecting the **Slice** tool reveals a side panel with three modes:
+
+| Mode | Description |
+|------|-------------|
+| **Grid** | Specify cols x rows. Live grid overlay with corner numbers. "Auto-fit grid" guesses rows from the trimmed source aspect. "Trim transparent" tightens each cell to its alpha bbox. |
+| **Anim** | Same as Grid + animation flag. Outputs `<source>-Nf-<idx>.png`; payload includes `frameCount` + `fps`. "Play" cycles through frames at the chosen FPS. |
+| **Auto** | Connected-component analysis (4 or 8-connected). Alpha threshold + min-size cull noise. Each detected region becomes a child asset. |
+
+"Apply slice" calls `onSliceApply(payload)` if the host supplied one, otherwise
+the editor falls back to multi-PNG download via `<a download>`.
+
+### Slice payload
+
+```js
+{
+  mode:    'grid' | 'anim' | 'auto',
+  params:  { cols, rows, trim, fps?, alphaThreshold?, connectivity?, minSize? },
+  source:  { name, w, h },
+  children: [ { name, dataUrl, blob, w, h, bounds:{x,y,w,h}, frameIndex? } ]
+}
+```
+
+The host project decides where to drop the children (e.g. POST to an upload
+endpoint or copy into `assets/sliced/<source>__sliced/<source>-NN.png`).
+
+## Photoshop-lite pixel ops
+
+`bgRemove`, `erase`, `fill`, and `bgRemoveColor` are recorded into
+`edits.pixelOps[]` (non-destructive, replayable). The pipeline is
+`crop -> pixelOps -> resize -> rotate -> filter`.
 
 The editor stores edits as a small JSON blob (`ImageEdits`). It never writes
 to the source PNG. The host application persists this blob alongside its own

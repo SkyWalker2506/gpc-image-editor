@@ -42,9 +42,19 @@
     inst = window.ImageEditor.mount({
       container: document.getElementById('host'),
       src,
+      sourceName: (src.split('/').pop() || 'sprite').split('.')[0],
       onChange: (e) => { document.getElementById('out').textContent = JSON.stringify(window.ImageEditor.compactEdits(e), null, 2); },
       onApply:  (e) => alert('Apply\n' + JSON.stringify(window.ImageEditor.compactEdits(e), null, 2)),
-      onCancel: () => alert('Cancel')
+      onCancel: () => alert('Cancel'),
+      onSliceApply: (payload) => {
+        document.getElementById('out').textContent = 'SLICE ' + payload.mode + ' -> ' + payload.children.length + ' children\n' +
+          payload.children.map(c => c.name + '  ' + c.w + 'x' + c.h).join('\n');
+        // demo: download each child PNG
+        payload.children.forEach((ch, i) => setTimeout(() => {
+          const a = document.createElement('a'); a.href = ch.dataUrl; a.download = ch.name;
+          document.body.appendChild(a); a.click(); a.remove();
+        }, i * 80));
+      }
     });
   }
   document.getElementById('load').addEventListener('click', () => mount(document.getElementById('src').value));

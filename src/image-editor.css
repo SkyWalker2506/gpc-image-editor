@@ -140,6 +140,20 @@
   font: 600 11px Fredoka, sans-serif;
 }
 .gpc-ie-row input[type=checkbox] { accent-color: var(--ie-accent); }
-.gpc-ie-row button {
-  width: 100%;
+.gpc-ie-row input[type=color] {
+  flex: 1; height: 26px; background: transparent;
+  border: 1px solid var(--ie-line-str); border-radius: 4px; padding: 1px;
+}
+.gpc-ie-row button { width: 100%; }
+.gpc-ie-row.gpc-ie-tabs { display: flex; gap: 2px; }
+.gpc-ie-row.gpc-ie-tabs button {
+  flex: 1; padding: 4px 0; font-size: 10px;
+  background: var(--ie-bg); border: 1px solid var(--ie-line-str);
+}
+[data-ie-tool], [data-ie-smode] {
+  min-width: 30px; padding: 4px 6px !important;
+}
+[data-ie-pane="slice"] [data-ie="slice-apply"] {
+  background: var(--ie-accent) !important; color: #1a1300 !important;
+  border-color: var(--ie-accent-strong) !important;
 }
