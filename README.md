@@ -106,6 +106,45 @@ img.src = './assets/my-sprite.png';
 All fields are optional. Use `ImageEditor.compactEdits(edits)` to drop fields
 left at default values before persisting.
 
+## Video to Animation Strip mode (v0.4.0)
+
+Companion API for converting an MP4/WebM clip into a horizontal sprite-sheet
+strip. Pure browser — no ffmpeg, no Wasm.
+
+```html
+<link rel="stylesheet" href="src/image-editor.css">
+<script src="src/image-editor.js"></script>
+<script src="src/video-to-strip.js"></script>
+```
+
+```js
+const inst = window.ImageEditor.mountVideoToStrip({
+  container:  document.getElementById('host'),
+  videoSrc:   URL.createObjectURL(file),
+  sourceName: 'croc-walk',
+  onApply: (out) => {
+    // out: { stripBlob, stripDataUrl, frames, fps, width, height,
+    //        frameWidth, frameHeight, filename, sourceName }
+    saveBlob(out.stripBlob, out.filename);
+  },
+  onCancel: () => inst.destroy()
+});
+```
+
+UI: scrub preview, frame count (2..32), frame W/H + fit presets (Native /
+256 / 512 / Downscale ½), trim start/end, optional crop bbox, optional
+chroma key (color picker + tolerance 0..120, click-to-pick from preview;
+green `#00FF00` tol 24, magenta `#FF00FF` tol 12 by default), FPS and
+filename preview (`<base>-<N>f.png`).
+
+Pipeline per frame: seek → `drawImage(video, [crop →] frameW × frameH)` →
+chroma key → copy into strip canvas → free per-frame canvas. Final strip
+canvas is `(frameW × N) × frameH`. Uses `requestVideoFrameCallback` when
+available with `seeked` fallback (1.5s safety timeout). Remote videos
+must be served with permissive CORS or the canvas will be tainted.
+
+See `examples/video-to-strip.html`.
+
 ## Standalone demo
 
 Open `examples/standalone.html` in a static server.

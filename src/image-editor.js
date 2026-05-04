@@ -1,4 +1,9 @@
-/* gpc-image-editor — non-destructive in-browser mini photoshop for game sprites.
+/* gpc-image-editor v0.4.0 — non-destructive in-browser mini photoshop for game sprites.
+ *
+ * Companion module: video-to-strip.js exposes
+ *   window.ImageEditor.mountVideoToStrip({ container, videoSrc, sourceName, onApply, onCancel })
+ *   -> { destroy }   // see src/video-to-strip.js for full API.
+ *
  *
  * Public API:
  *   window.ImageEditor.mount({
@@ -1703,7 +1708,11 @@
     return Object.keys(out).length ? out : null;
   }
 
-  root.ImageEditor = {
+  // Preserve any properties already attached (e.g. mountVideoToStrip if its
+  // script loaded first) by merging onto an existing namespace.
+  const existing = root.ImageEditor || {};
+  root.ImageEditor = Object.assign(existing, {
+    version: '0.4.0',
     mount,
     applyEditsToCanvas,
     compactEdits,
@@ -1711,5 +1720,5 @@
     sliceImage,
     trimAlpha,
     findConnectedRegions
-  };
+  });
 })(typeof window !== 'undefined' ? window : this);

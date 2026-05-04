@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>gpc-image-editor — Video to Animation Strip</title>
+<link rel="stylesheet" href="../src/image-editor.css">
+<style>
+  body { margin: 0; background: #11141a; color: #e8eaf0; font: 13px system-ui, sans-serif; }
+  header { padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; gap: 12px; align-items: center; }
+  header h1 { font-size: 14px; margin: 0; font-weight: 600; }
+  header input[type=file] { color: #9099ad; }
+  #host { padding: 12px; }
+  #out { padding: 12px 16px; border-top: 1px solid rgba(255,255,255,0.08); }
+  #out img { background: repeating-conic-gradient(#2c313f 0% 25%, #232733 0% 50%) 50% / 16px 16px; max-width: 100%; image-rendering: pixelated; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Video to Animation Strip</h1>
+    <input type="file" id="picker" accept="video/mp4,video/webm,video/*">
+    <span id="info" style="color:#9099ad;"></span>
+  </header>
+  <div id="host"></div>
+  <div id="out"></div>
+
+  <!-- Order doesn't matter; both modules share window.ImageEditor. -->
+  <script src="../src/image-editor.js"></script>
+  <script src="../src/video-to-strip.js"></script>
+  <script>
+    const host = document.getElementById('host');
+    const picker = document.getElementById('picker');
+    const out = document.getElementById('out');
+    const info = document.getElementById('info');
+    let inst = null;
+
+    picker.addEventListener('change', () => {
+      const f = picker.files && picker.files[0];
+      if (!f) return;
+      const url = URL.createObjectURL(f);
+      const base = (f.name || 'clip').replace(/\.[^.]+$/, '');
+      info.textContent = f.name + ' (' + Math.round(f.size / 1024) + ' KB)';
+      if (inst && inst.destroy) inst.destroy();
+      inst = window.ImageEditor.mountVideoToStrip({
+        container: host,
+        videoSrc: url,
+        sourceName: base,
+        onApply: (o) => {
+          out.innerHTML = '';
+          const a = document.createElement('a');
+          a.href = o.stripDataUrl;
+          a.download = o.filename;
+          a.textContent = 'Download ' + o.filename + ' (' + o.width + 'x' + o.height + ', ' + o.frames + 'f @ ' + o.fps + ' fps)';
+          a.style.display = 'inline-block';
+          a.style.marginBottom = '8px';
+          a.style.color = '#6ea8fe';
+          out.appendChild(a);
+          out.appendChild(document.createElement('br'));
+          const img = new Image();
+          img.src = o.stripDataUrl;
+          out.appendChild(img);
+        },
+        onCancel: () => {
+          if (inst && inst.destroy) inst.destroy();
+          inst = null;
+          host.innerHTML = '';
+        }
+      });
+    });
+  </script>
+</body>
+</html>
