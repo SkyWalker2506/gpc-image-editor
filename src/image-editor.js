@@ -1,4 +1,4 @@
-/* gpc-image-editor v0.4.0 — non-destructive in-browser mini photoshop for game sprites.
+/* gpc-image-editor v0.5.0 — non-destructive in-browser mini photoshop for game sprites.
  *
  * Companion module: video-to-strip.js exposes
  *   window.ImageEditor.mountVideoToStrip({ container, videoSrc, sourceName, onApply, onCancel })
@@ -390,7 +390,20 @@
     })();
     const W = baked.width, H = baked.height;
     const children = [];
-    if (mode === 'grid' || mode === 'anim') {
+    if (mode === 'anim' && params._perCell && params._cells && params._cells.length) {
+      // Per-cell anim mode: each frame has its own x/y/w/h
+      const cells = params._cells;
+      const outW = params.outputW || Math.max(...cells.map(c => c.w));
+      const outH = params.outputH || Math.max(...cells.map(c => c.h));
+      cells.forEach((cell, i) => {
+        const cnv = document.createElement('canvas');
+        cnv.width = outW; cnv.height = outH;
+        const dx2 = Math.round((outW - cell.w) / 2);
+        const dy2 = Math.round((outH - cell.h) / 2);
+        cnv.getContext('2d').drawImage(baked, cell.x, cell.y, cell.w, cell.h, dx2, dy2, cell.w, cell.h);
+        children.push({ canvas: cnv, bounds: { x: cell.x, y: cell.y, w: cell.w, h: cell.h }, frameIndex: i });
+      });
+    } else if (mode === 'grid' || mode === 'anim') {
       const cols = Math.max(1, params.cols | 0);
       const rows = Math.max(1, params.rows | 0);
       const padX = Math.max(0, params.paddingX | 0);
@@ -489,6 +502,17 @@
     let sliceAnimFrame = 0;
     let sliceAnimTimer = null;
 
+    // Per-cell anim state (used when sliceMode === 'anim')
+    let animCells = [];
+    let animDefaultCellW = 256;
+    let animDefaultCellH = 256;
+    let animFrameCount = 8;
+    let animPaddingX = 0;
+    let animPaddingY = 0;
+    let animOutputW = null;
+    let animOutputH = null;
+    let animSelectedCell = -1;
+
     container.innerHTML = '';
     container.classList.add('gpc-ie-root');
 
@@ -517,6 +541,13 @@
         el.onload = () => {
           img = el;
           imgReady = true;
+          // If anim mode and cells still at default 256, auto-fit from image dimensions
+          if (sliceMode === 'anim' && animDefaultCellW === 256 && animFrameCount > 0) {
+            animDefaultCellW = Math.max(1, Math.floor(el.naturalWidth / animFrameCount));
+            animDefaultCellH = el.naturalHeight;
+            buildAnimCells();
+            if (activeTool === 'slice') renderSlicePanel();
+          }
           // Only fit+render immediately if the canvas has real dimensions.
           // If the modal is still hidden (0×0), the ResizeObserver will call
           // fitView()+render() once the modal becomes visible.
@@ -867,7 +898,12 @@
       }
       if (opts.initialSliceParams && typeof opts.initialSliceParams === 'object') {
         sliceParams = Object.assign({}, sliceParams, opts.initialSliceParams);
+        // If legacy cols-based params passed for anim, derive per-cell defaults
+        if (sliceMode === 'anim' && opts.initialSliceParams.cols) {
+          animFrameCount = Math.max(1, opts.initialSliceParams.cols | 0);
+        }
       }
+      buildAnimCells();
       setActiveTool(opts.initialTool && ['crop','rectsel','lasso','bgRemove','eyedrop','brush','erase','fill','line','rect','circle','gradient','slice'].includes(opts.initialTool) ? opts.initialTool : 'crop');
       renderSlicePanel();
       syncControls();
@@ -931,19 +967,44 @@
         b.style.color      = (b.dataset.ieSmode === sliceMode) ? '#1a1300' : '';
       });
       let body = '';
-      if (sliceMode === 'grid' || sliceMode === 'anim') {
+      if (sliceMode === 'anim') {
+        const curOutW = animOutputW || '';
+        const curOutH = animOutputH || '';
+        body = `
+          <div class="gpc-ie-row"><label>Default cell</label>
+            <input type="number" data-ie="s-anim-dw" min="1" step="1" value="${animDefaultCellW}" style="width:60px"> ×
+            <input type="number" data-ie="s-anim-dh" min="1" step="1" value="${animDefaultCellH}" style="width:60px">
+          </div>
+          <div class="gpc-ie-row"><label>Frames</label>
+            <input type="number" data-ie="s-anim-count" min="1" max="64" step="1" value="${animFrameCount}" style="width:60px">
+            <button data-ie="s-anim-autofit" style="margin-left:4px">Auto-fit</button>
+          </div>
+          <div style="margin-top:8px;font-weight:bold;font-size:11px;color:#aaa;padding:2px 0;">CELLS</div>
+          <div data-ie="s-anim-cell-list" style="max-height:160px;overflow-y:auto;margin-bottom:6px;"></div>
+          <div data-ie="s-anim-selected-cell" style="display:none;border-top:1px solid #333;padding-top:6px;margin-top:4px;">
+            <div style="font-weight:bold;font-size:11px;color:#0df;padding:2px 0;">SELECTED CELL</div>
+            <div class="gpc-ie-row">
+              <label>W</label><input type="number" data-ie="s-anim-cell-w" min="1" step="1" style="width:70px">
+              <label style="margin-left:6px">H</label><input type="number" data-ie="s-anim-cell-h" min="1" step="1" style="width:70px">
+            </div>
+          </div>
+          <div class="gpc-ie-row" style="margin-top:6px;"><label>Output</label>
+            <input type="number" data-ie="s-anim-outw" min="1" step="1" value="${curOutW}" placeholder="auto" style="width:60px"> ×
+            <input type="number" data-ie="s-anim-outh" min="1" step="1" value="${curOutH}" placeholder="auto" style="width:60px">
+            <button data-ie="s-anim-recompute" title="Recompute max" style="margin-left:4px">↻</button>
+          </div>
+          <div class="gpc-ie-row"><label>Gap X</label>
+            <input type="number" data-ie="s-anim-padx" min="0" step="1" value="${animPaddingX}" style="width:50px">
+            <label style="margin-left:6px">Y</label>
+            <input type="number" data-ie="s-anim-pady" min="0" step="1" value="${animPaddingY}" style="width:50px">
+          </div>
+          <div class="gpc-ie-row"><label>FPS</label><input type="number" data-ie="s-fps" min="1" max="60" step="1" value="${sliceParams.fps}" style="width:60px"></div>`;
+      } else if (sliceMode === 'grid') {
         body = `
           <div class="gpc-ie-row"><label>Cols</label><input type="number" data-ie="s-cols" min="1" step="1" value="${sliceParams.cols}"></div>
           <div class="gpc-ie-row"><label>Rows</label><input type="number" data-ie="s-rows" min="1" step="1" value="${sliceParams.rows}"></div>
           <div class="gpc-ie-row"><label><input type="checkbox" data-ie="s-trim" ${sliceParams.trim ? 'checked' : ''}> Trim transparent</label></div>
           <div class="gpc-ie-row"><button data-ie="s-autofit">Auto-fit grid</button></div>`;
-        if (sliceMode === 'anim') {
-          body += `<div class="gpc-ie-row"><label>FPS</label><input type="number" data-ie="s-fps" min="1" max="60" step="1" value="${sliceParams.fps}"></div>`;
-          body += `<div class="gpc-ie-row"><label>Offset X</label><input type="number" data-ie="s-offx" min="0" step="1" value="${sliceParams.frameOffsetX}"></div>`;
-          body += `<div class="gpc-ie-row"><label>Offset Y</label><input type="number" data-ie="s-offy" min="0" step="1" value="${sliceParams.frameOffsetY}"></div>`;
-          body += `<div class="gpc-ie-row"><label>Padding X</label><input type="number" data-ie="s-padx" min="0" step="1" value="${sliceParams.paddingX}"></div>`;
-          body += `<div class="gpc-ie-row"><label>Padding Y</label><input type="number" data-ie="s-pady" min="0" step="1" value="${sliceParams.paddingY}"></div>`;
-        }
       } else if (sliceMode === 'auto') {
         body = `
           <div class="gpc-ie-row"><label>Alpha thr</label><input type="range" data-ie="s-alpha" min="1" max="255" step="1" value="${sliceParams.alphaThreshold}"></div>
@@ -971,6 +1032,46 @@
       const sOffY  = q('[data-ie="s-offy"]');  if (sOffY)  sOffY.addEventListener('input',  e => { sliceParams.frameOffsetY = Math.max(0, +e.target.value); sliceChildren = null; render(); });
       const sPadX  = q('[data-ie="s-padx"]');  if (sPadX)  sPadX.addEventListener('input',  e => { sliceParams.paddingX = Math.max(0, +e.target.value); sliceChildren = null; render(); });
       const sPadY  = q('[data-ie="s-pady"]');  if (sPadY)  sPadY.addEventListener('input',  e => { sliceParams.paddingY = Math.max(0, +e.target.value); sliceChildren = null; render(); });
+
+      // Per-cell anim wiring
+      if (sliceMode === 'anim') {
+        const aDw = q('[data-ie="s-anim-dw"]'); if (aDw) aDw.addEventListener('input', e => { animDefaultCellW = Math.max(1, +e.target.value); buildAnimCells(); renderAnimCellList(); sliceChildren = null; render(); });
+        const aDh = q('[data-ie="s-anim-dh"]'); if (aDh) aDh.addEventListener('input', e => { animDefaultCellH = Math.max(1, +e.target.value); buildAnimCells(); renderAnimCellList(); sliceChildren = null; render(); });
+        const aCnt = q('[data-ie="s-anim-count"]'); if (aCnt) aCnt.addEventListener('input', e => { animFrameCount = Math.max(1, +e.target.value); buildAnimCells(); renderAnimCellList(); sliceChildren = null; render(); });
+        const aFit = q('[data-ie="s-anim-autofit"]'); if (aFit) aFit.addEventListener('click', () => {
+          if (!imgReady) return;
+          animDefaultCellW = Math.max(1, Math.floor(img.naturalWidth / animFrameCount));
+          animDefaultCellH = img.naturalHeight;
+          buildAnimCells(); renderAnimCellList(); sliceChildren = null; render();
+          // Update inputs
+          const dw = q('[data-ie="s-anim-dw"]'); if (dw) dw.value = animDefaultCellW;
+          const dh = q('[data-ie="s-anim-dh"]'); if (dh) dh.value = animDefaultCellH;
+        });
+        const aPX = q('[data-ie="s-anim-padx"]'); if (aPX) aPX.addEventListener('input', e => { animPaddingX = Math.max(0, +e.target.value); recomputeAnimCellPositions(); renderAnimCellList(); sliceChildren = null; render(); });
+        const aPY = q('[data-ie="s-anim-pady"]'); if (aPY) aPY.addEventListener('input', e => { animPaddingY = Math.max(0, +e.target.value); recomputeAnimCellPositions(); renderAnimCellList(); sliceChildren = null; render(); });
+        const aOW = q('[data-ie="s-anim-outw"]'); if (aOW) aOW.addEventListener('input', e => { animOutputW = e.target.value ? Math.max(1, +e.target.value) : null; });
+        const aOH = q('[data-ie="s-anim-outh"]'); if (aOH) aOH.addEventListener('input', e => { animOutputH = e.target.value ? Math.max(1, +e.target.value) : null; });
+        const aRec = q('[data-ie="s-anim-recompute"]'); if (aRec) aRec.addEventListener('click', () => {
+          if (!animCells.length) return;
+          animOutputW = null; animOutputH = null;
+          const mw = Math.max(...animCells.map(c => c.w));
+          const mh = Math.max(...animCells.map(c => c.h));
+          const owIn = q('[data-ie="s-anim-outw"]'); if (owIn) owIn.value = mw;
+          const ohIn = q('[data-ie="s-anim-outh"]'); if (ohIn) ohIn.value = mh;
+        });
+        const aCW = q('[data-ie="s-anim-cell-w"]'); if (aCW) aCW.addEventListener('input', e => {
+          if (animSelectedCell < 0 || animSelectedCell >= animCells.length) return;
+          animCells[animSelectedCell].w = Math.max(1, +e.target.value);
+          recomputeAnimCellPositions(); renderAnimCellList(); sliceChildren = null; render();
+        });
+        const aCH = q('[data-ie="s-anim-cell-h"]'); if (aCH) aCH.addEventListener('input', e => {
+          if (animSelectedCell < 0 || animSelectedCell >= animCells.length) return;
+          animCells[animSelectedCell].h = Math.max(1, +e.target.value);
+          renderAnimCellList(); sliceChildren = null; render();
+        });
+        renderAnimCellList();
+        updateSelectedCellInputs();
+      }
     }
 
     function autoFitGrid() {
@@ -988,6 +1089,60 @@
       render();
     }
 
+    // ---- Per-cell anim helpers ---------------------------------------------
+    function buildAnimCells() {
+      animCells = [];
+      for (let i = 0; i < animFrameCount; i++) {
+        const prevX = i === 0 ? 0 : animCells[i - 1].x + animCells[i - 1].w + animPaddingX;
+        animCells.push({ x: prevX, y: animPaddingY, w: animDefaultCellW, h: animDefaultCellH });
+      }
+    }
+
+    function recomputeAnimCellPositions() {
+      for (let i = 1; i < animCells.length; i++) {
+        animCells[i].x = animCells[i - 1].x + animCells[i - 1].w + animPaddingX;
+      }
+    }
+
+    function renderAnimCellList() {
+      const listEl = ui.sliceBody.querySelector('[data-ie="s-anim-cell-list"]');
+      if (!listEl) return;
+      listEl.innerHTML = animCells.map((c, i) => `
+        <div data-anim-cell="${i}" style="
+          display:flex;align-items:center;padding:3px 6px;cursor:pointer;
+          border-radius:4px;font-size:11px;
+          background:${animSelectedCell === i ? 'rgba(0,221,255,0.15)' : 'transparent'};
+          border-left:3px solid ${animSelectedCell === i ? '#0df' : 'transparent'};
+        ">
+          <span style="color:#aaa;width:20px">${i + 1}</span>
+          <span style="flex:1">${c.w}×${c.h}</span>
+          <span style="color:#555;font-size:10px">x:${c.x}</span>
+        </div>
+      `).join('');
+      listEl.querySelectorAll('[data-anim-cell]').forEach(el => {
+        el.addEventListener('click', () => {
+          animSelectedCell = +el.dataset.animCell;
+          renderAnimCellList();
+          updateSelectedCellInputs();
+          render();
+        });
+      });
+    }
+
+    function updateSelectedCellInputs() {
+      const panel = ui.sliceBody.querySelector('[data-ie="s-anim-selected-cell"]');
+      if (!panel) return;
+      if (animSelectedCell < 0 || animSelectedCell >= animCells.length) {
+        panel.style.display = 'none';
+        return;
+      }
+      panel.style.display = '';
+      const wIn = panel.querySelector('[data-ie="s-anim-cell-w"]');
+      const hIn = panel.querySelector('[data-ie="s-anim-cell-h"]');
+      if (wIn) wIn.value = animCells[animSelectedCell].w;
+      if (hIn) hIn.value = animCells[animSelectedCell].h;
+    }
+
     function bakedSource() {
       // Source baked with crop+filter+pixelOps applied (no rotate/flip — slice grids assume axis-aligned).
       const e = { ...edits, rotate: 0, flip: { h: false, v: false }, resize: null, _layers: layers };
@@ -997,7 +1152,11 @@
     function computeSlice() {
       if (!imgReady) return null;
       const e = { ...edits, rotate: 0, flip: { h: false, v: false }, resize: null };
-      const out = sliceImage(img, e, sliceMode, sliceParams);
+      let params = sliceParams;
+      if (sliceMode === 'anim') {
+        params = { ...sliceParams, _perCell: true, _cells: animCells.map(c => ({ ...c })), outputW: animOutputW, outputH: animOutputH };
+      }
+      const out = sliceImage(img, e, sliceMode, params);
       return out.children;
     }
 
@@ -1014,7 +1173,9 @@
         if (typeof opts.onSliceApply === 'function') {
           opts.onSliceApply({
             mode: sliceMode,
-            params: { ...sliceParams },
+            params: sliceMode === 'anim'
+              ? { ...sliceParams, _perCell: true, _cells: animCells.map(c => ({ ...c })), outputW: animOutputW, outputH: animOutputH }
+              : { ...sliceParams },
             source: { name: baseName, w: img.naturalWidth, h: img.naturalHeight },
             children: childPayload
           });
@@ -1278,7 +1439,26 @@
       ctx.strokeStyle = 'rgba(255,179,71,0.85)';
       ctx.lineWidth = 1;
       ctx.setLineDash([4, 3]);
-      if (sliceMode === 'grid' || sliceMode === 'anim') {
+      if (sliceMode === 'anim' && animCells.length > 0) {
+        ctx.font = 'bold 11px Fredoka, sans-serif';
+        ctx.textBaseline = 'top';
+        animCells.forEach((cell, i) => {
+          const isSelected = i === animSelectedCell;
+          ctx.strokeStyle = isSelected ? '#00ddff' : 'rgba(255,179,71,0.85)';
+          ctx.lineWidth = isSelected ? 2.5 : 1;
+          ctx.setLineDash(isSelected ? [] : [4, 3]);
+          ctx.strokeRect(dx + cell.x * zoom + 0.5, dy + cell.y * zoom + 0.5, cell.w * zoom, cell.h * zoom);
+          ctx.setLineDash([]);
+          ctx.fillStyle = isSelected ? '#00ddff' : '#ffb347';
+          ctx.fillText(String(i + 1), dx + cell.x * zoom + 4, dy + cell.y * zoom + 2);
+          if (isSelected) {
+            const hx = dx + (cell.x + cell.w) * zoom - 5;
+            const hy = dy + (cell.y + cell.h) * zoom - 5;
+            ctx.fillStyle = '#00ddff';
+            ctx.fillRect(hx, hy, 10, 10);
+          }
+        });
+      } else if (sliceMode === 'grid') {
         const cols = Math.max(1, sliceParams.cols), rows = Math.max(1, sliceParams.rows);
         const padX = Math.max(0, sliceParams.paddingX | 0);
         const padY = Math.max(0, sliceParams.paddingY | 0);
@@ -1457,6 +1637,24 @@
         dragging = 'shape-' + activeTool;
         shapeStart = { x: ipt.x, y: ipt.y };
         shapeEnd = { x: ipt.x, y: ipt.y };
+        return;
+      }
+
+      // Per-cell anim: click canvas to select cell
+      if (activeTool === 'slice' && sliceMode === 'anim') {
+        let hit = -1;
+        for (let i = 0; i < animCells.length; i++) {
+          const c = animCells[i];
+          if (ipt.x >= c.x && ipt.x <= c.x + c.w && ipt.y >= c.y && ipt.y <= c.y + c.h) {
+            hit = i; break;
+          }
+        }
+        if (hit !== animSelectedCell) {
+          animSelectedCell = hit;
+          renderAnimCellList();
+          updateSelectedCellInputs();
+          render();
+        }
         return;
       }
 
