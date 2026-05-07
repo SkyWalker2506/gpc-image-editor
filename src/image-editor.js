@@ -659,7 +659,7 @@
             </div>
             <div data-ie="slice-body"></div>
             <div class="gpc-ie-row"><button data-ie="slice-compute">Preview slices</button></div>
-            <div class="gpc-ie-row"><button data-ie="slice-apply" class="gpc-ie-btn-primary">Apply slice</button></div>
+            <div class="gpc-ie-row"><button data-ie="slice-apply" class="gpc-ie-btn-primary">Apply</button></div>
             <div class="gpc-ie-row" data-ie="slice-status" style="display:none;font-size:12px;color:#4caf50;padding:4px 0"></div>
             <div class="gpc-ie-row"><button data-ie="slice-zip">Download ZIP</button></div>
             <div class="gpc-ie-row" data-ie="slice-anim-controls" style="display:none">
