@@ -1481,10 +1481,12 @@
           ctx.fillStyle = isSelected ? '#00ddff' : '#ffb347';
           ctx.fillText(String(i + 1), dx + cell.x * zoom + 4, dy + cell.y * zoom + 2);
           if (isSelected) {
-            const hx = dx + (cell.x + cell.w) * zoom - 5;
-            const hy = dy + (cell.y + cell.h) * zoom - 5;
+            const midY = dy + (cell.y + cell.h / 2) * zoom;
             ctx.fillStyle = '#00ddff';
-            ctx.fillRect(hx, hy, 10, 10);
+            // right-middle handle
+            ctx.fillRect(dx + (cell.x + cell.w) * zoom - 4, midY - 4, 8, 8);
+            // left-middle handle
+            ctx.fillRect(dx + cell.x * zoom - 4, midY - 4, 8, 8);
           }
         });
       } else if (sliceMode === 'grid') {
@@ -1669,8 +1671,31 @@
         return;
       }
 
-      // Per-cell anim: click canvas to select cell
+      // Per-cell anim: drag handles or click to select
       if (activeTool === 'slice' && sliceMode === 'anim') {
+        // Check handles on selected cell first
+        if (animSelectedCell >= 0 && animSelectedCell < animCells.length) {
+          const sc = animCells[animSelectedCell];
+          const midY = sc.y + sc.h / 2;
+          const handleR = 6; // hit radius in image-space (scales with zoom via screen px / zoom)
+          const hRadX = handleR / zoom;
+          const hRadY = handleR / zoom;
+          // right-middle handle
+          if (Math.abs(ipt.x - (sc.x + sc.w)) <= hRadX && Math.abs(ipt.y - midY) <= hRadY) {
+            dragging = 'anim-resize-right';
+            cropDragOrig = { ...sc, cellIdx: animSelectedCell, pointerX: ipt.x };
+            try { ui.canvas.setPointerCapture(ev.pointerId); } catch (_) {}
+            return;
+          }
+          // left-middle handle
+          if (Math.abs(ipt.x - sc.x) <= hRadX && Math.abs(ipt.y - midY) <= hRadY) {
+            dragging = 'anim-resize-left';
+            cropDragOrig = { ...sc, cellIdx: animSelectedCell, pointerX: ipt.x };
+            try { ui.canvas.setPointerCapture(ev.pointerId); } catch (_) {}
+            return;
+          }
+        }
+        // Click inside a cell to select it
         let hit = -1;
         for (let i = 0; i < animCells.length; i++) {
           const c = animCells[i];
@@ -1730,9 +1755,21 @@
     }
 
     function onPointerMove(ev) {
-      if (!dragging) return;
       const p = localXY(ev);
       const ipt = screenToImg(p.x, p.y);
+      // Cursor hint for anim handles (no active drag needed)
+      if (!dragging && activeTool === 'slice' && sliceMode === 'anim' && animSelectedCell >= 0 && animSelectedCell < animCells.length) {
+        const sc = animCells[animSelectedCell];
+        const midY = sc.y + sc.h / 2;
+        const hRadX = 6 / zoom, hRadY = 6 / zoom;
+        if ((Math.abs(ipt.x - (sc.x + sc.w)) <= hRadX || Math.abs(ipt.x - sc.x) <= hRadX) && Math.abs(ipt.y - midY) <= hRadY) {
+          ui.canvas.style.cursor = 'ew-resize';
+        } else {
+          const cursors = { slice: 'crosshair', crop: 'crosshair', erase: 'cell', brush: 'crosshair', bgRemove: 'cell', fill: 'cell', eyedrop: 'crosshair', rectsel: 'crosshair', lasso: 'crosshair', line: 'crosshair', rect: 'crosshair', circle: 'crosshair', gradient: 'crosshair' };
+          ui.canvas.style.cursor = cursors[activeTool] || 'pointer';
+        }
+      }
+      if (!dragging) return;
       if (dragging === 'erase') {
         const local = imgPointToCroppedSpace(ipt); if (!local) return;
         edits.pixelOps.push({ type: 'erase', layer: activeLayerId, x: local.x, y: local.y, radius: brushRadius });
@@ -1758,6 +1795,38 @@
       if (dragging && dragging.indexOf('shape-') === 0) {
         shapeEnd = { x: ipt.x, y: ipt.y };
         render(); return;
+      }
+      if (dragging === 'anim-resize-right') {
+        const o = cropDragOrig;
+        const dx = ipt.x - o.pointerX;
+        const cell = animCells[o.cellIdx];
+        cell.w = Math.max(1, Math.round(o.w + dx));
+        recomputeAnimCellPositions();
+        updateSelectedCellInputs();
+        renderAnimCellList();
+        sliceChildren = null;
+        render();
+        return;
+      }
+      if (dragging === 'anim-resize-left') {
+        const o = cropDragOrig;
+        const dx = ipt.x - o.pointerX;
+        const cell = animCells[o.cellIdx];
+        // Clamp so cell.x doesn't go past previous cell's right edge
+        const prevRight = o.cellIdx > 0
+          ? animCells[o.cellIdx - 1].x + animCells[o.cellIdx - 1].w + animPaddingX
+          : 0;
+        let newX = Math.round(o.x + dx);
+        newX = Math.max(prevRight, newX);
+        const newW = Math.max(1, o.x + o.w - newX);
+        cell.x = newX;
+        cell.w = newW;
+        recomputeAnimCellPositions();
+        updateSelectedCellInputs();
+        renderAnimCellList();
+        sliceChildren = null;
+        render();
+        return;
       }
       if (dragging === 'pan') {
         pan.x = cropDragOrig.px + (p.x - cropDragOrig.sx);
