@@ -393,19 +393,30 @@
     if (mode === 'grid' || mode === 'anim') {
       const cols = Math.max(1, params.cols | 0);
       const rows = Math.max(1, params.rows | 0);
-      const cw = Math.floor(W / cols);
-      const ch = Math.floor(H / rows);
+      const padX = Math.max(0, params.paddingX | 0);
+      const padY = Math.max(0, params.paddingY | 0);
+      const offX = Math.max(0, params.frameOffsetX | 0);
+      const offY = Math.max(0, params.frameOffsetY | 0);
+      // If no padding set, fall back to simple equal division
+      const cw = padX > 0
+        ? Math.floor((W - 2 * offX - (cols - 1) * padX) / cols)
+        : Math.floor((W - 2 * offX) / cols);
+      const ch = padY > 0
+        ? Math.floor((H - 2 * offY - (rows - 1) * padY) / rows)
+        : Math.floor((H - 2 * offY) / rows);
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
+          const sx = offX + c * (cw + padX);
+          const sy = offY + r * (ch + padY);
           const cnv = document.createElement('canvas');
           cnv.width = cw; cnv.height = ch;
-          cnv.getContext('2d').drawImage(baked, c * cw, r * ch, cw, ch, 0, 0, cw, ch);
-          let bounds = { x: c * cw, y: r * ch, w: cw, h: ch };
+          cnv.getContext('2d').drawImage(baked, sx, sy, cw, ch, 0, 0, cw, ch);
+          let bounds = { x: sx, y: sy, w: cw, h: ch };
           let outCv = cnv;
           if (params.trim) {
             const trimmed = trimAlpha(cnv, params.alphaThreshold || 1);
             outCv = trimmed.canvas;
-            bounds = { x: c * cw + trimmed.bounds.x, y: r * ch + trimmed.bounds.y,
+            bounds = { x: sx + trimmed.bounds.x, y: sy + trimmed.bounds.y,
                        w: trimmed.bounds.w, h: trimmed.bounds.h };
           }
           children.push({ canvas: outCv, bounds, frameIndex: r * cols + c });
@@ -470,7 +481,9 @@
       fps: 8,
       alphaThreshold: 16,
       connectivity: 4,
-      minSize: 64
+      minSize: 64,
+      paddingX: 0, paddingY: 0,
+      frameOffsetX: 0, frameOffsetY: 0
     };
     let sliceChildren = null;       // last computed children
     let sliceAnimFrame = 0;
@@ -926,6 +939,10 @@
           <div class="gpc-ie-row"><button data-ie="s-autofit">Auto-fit grid</button></div>`;
         if (sliceMode === 'anim') {
           body += `<div class="gpc-ie-row"><label>FPS</label><input type="number" data-ie="s-fps" min="1" max="60" step="1" value="${sliceParams.fps}"></div>`;
+          body += `<div class="gpc-ie-row"><label>Offset X</label><input type="number" data-ie="s-offx" min="0" step="1" value="${sliceParams.frameOffsetX}"></div>`;
+          body += `<div class="gpc-ie-row"><label>Offset Y</label><input type="number" data-ie="s-offy" min="0" step="1" value="${sliceParams.frameOffsetY}"></div>`;
+          body += `<div class="gpc-ie-row"><label>Padding X</label><input type="number" data-ie="s-padx" min="0" step="1" value="${sliceParams.paddingX}"></div>`;
+          body += `<div class="gpc-ie-row"><label>Padding Y</label><input type="number" data-ie="s-pady" min="0" step="1" value="${sliceParams.paddingY}"></div>`;
         }
       } else if (sliceMode === 'auto') {
         body = `
@@ -950,6 +967,10 @@
       const sConn  = q('[data-ie="s-conn"]');  if (sConn)  sConn.addEventListener('change', e => { sliceParams.connectivity = +e.target.value; });
       const sMin   = q('[data-ie="s-min"]');   if (sMin)   sMin.addEventListener('input',   e => { sliceParams.minSize = +e.target.value; });
       const sFit   = q('[data-ie="s-autofit"]'); if (sFit) sFit.addEventListener('click', () => autoFitGrid());
+      const sOffX  = q('[data-ie="s-offx"]');  if (sOffX)  sOffX.addEventListener('input',  e => { sliceParams.frameOffsetX = Math.max(0, +e.target.value); sliceChildren = null; render(); });
+      const sOffY  = q('[data-ie="s-offy"]');  if (sOffY)  sOffY.addEventListener('input',  e => { sliceParams.frameOffsetY = Math.max(0, +e.target.value); sliceChildren = null; render(); });
+      const sPadX  = q('[data-ie="s-padx"]');  if (sPadX)  sPadX.addEventListener('input',  e => { sliceParams.paddingX = Math.max(0, +e.target.value); sliceChildren = null; render(); });
+      const sPadY  = q('[data-ie="s-pady"]');  if (sPadY)  sPadY.addEventListener('input',  e => { sliceParams.paddingY = Math.max(0, +e.target.value); sliceChildren = null; render(); });
     }
 
     function autoFitGrid() {
@@ -986,7 +1007,7 @@
         flashInfo('No slices to apply.');
         return;
       }
-      const baseName = (opts.sourceName || 'sprite').replace(/\.[a-z0-9]+$/i, '');
+      const baseName = (opts.assetName || opts.sourceName || 'sprite').replace(/\.[a-z0-9]+$/i, '');
       const childPayload = [];
       let pendingBlobs = children.length;
       const finish = () => {
@@ -1003,22 +1024,21 @@
         }
       };
       children.forEach((c, i) => {
-        const idx = String(i + 1).padStart(2, '0');
         const name = sliceMode === 'anim'
-          ? `${baseName}-${children.length}f-${idx}.png`
-          : `${baseName}-${idx}.png`;
+          ? `${baseName}-frame-${i}.png`
+          : `${baseName}-frame-${i}.png`;
         const dataUrl = c.canvas.toDataURL('image/png');
         c.canvas.toBlob((blob) => {
           childPayload.push({
             name, dataUrl, blob,
             w: c.canvas.width, h: c.canvas.height,
             bounds: c.bounds,
-            frameIndex: c.frameIndex
+            frameIndex: c.frameIndex !== undefined ? c.frameIndex : i
           });
           pendingBlobs--;
           if (pendingBlobs === 0) {
-            // preserve original order
-            childPayload.sort((a, b) => a.name.localeCompare(b.name));
+            // preserve frame order
+            childPayload.sort((a, b) => (a.frameIndex ?? 0) - (b.frameIndex ?? 0));
             finish();
           }
         }, 'image/png');
@@ -1026,8 +1046,9 @@
     }
 
     function downloadSliceZip(prebuilt, baseName) {
+      const base = baseName || (opts.assetName || opts.sourceName || 'sprite').replace(/\.[a-z0-9]+$/i, '');
       const children = prebuilt || (sliceChildren ? sliceChildren.map((c, i) => ({
-        name: ((opts.sourceName || 'sprite').replace(/\.[a-z0-9]+$/i, '')) + '-' + String(i + 1).padStart(2, '0') + '.png',
+        name: `${base}-frame-${i}.png`,
         dataUrl: c.canvas.toDataURL('image/png')
       })) : null);
       if (!children || !children.length) { flashInfo('No slices to download.'); return; }
@@ -1259,19 +1280,46 @@
       ctx.setLineDash([4, 3]);
       if (sliceMode === 'grid' || sliceMode === 'anim') {
         const cols = Math.max(1, sliceParams.cols), rows = Math.max(1, sliceParams.rows);
-        const cw = (iw / cols) * zoom, ch = (ih / rows) * zoom;
-        for (let c = 0; c <= cols; c++) {
-          ctx.beginPath();
-          ctx.moveTo(dx + c * cw + 0.5, dy);
-          ctx.lineTo(dx + c * cw + 0.5, dy + ih * zoom);
-          ctx.stroke();
+        const padX = Math.max(0, sliceParams.paddingX | 0);
+        const padY = Math.max(0, sliceParams.paddingY | 0);
+        const offX = Math.max(0, sliceParams.frameOffsetX | 0);
+        const offY = Math.max(0, sliceParams.frameOffsetY | 0);
+        const cw = padX > 0
+          ? (iw - 2 * offX - (cols - 1) * padX) / cols
+          : (iw - 2 * offX) / cols;
+        const ch = padY > 0
+          ? (ih - 2 * offY - (rows - 1) * padY) / rows
+          : (ih - 2 * offY) / rows;
+
+        // Draw frame cells (orange dashed)
+        ctx.strokeStyle = 'rgba(255,179,71,0.85)';
+        ctx.setLineDash([4, 3]);
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            const fx = (offX + c * (cw + padX)) * zoom;
+            const fy = (offY + r * (ch + padY)) * zoom;
+            ctx.strokeRect(dx + fx + 0.5, dy + fy + 0.5, cw * zoom, ch * zoom);
+          }
         }
-        for (let r = 0; r <= rows; r++) {
-          ctx.beginPath();
-          ctx.moveTo(dx, dy + r * ch + 0.5);
-          ctx.lineTo(dx + iw * zoom, dy + r * ch + 0.5);
-          ctx.stroke();
+
+        // Draw padding gaps (cyan fill) when padding is set
+        if (padX > 0 || padY > 0) {
+          ctx.setLineDash([]);
+          ctx.fillStyle = 'rgba(0,220,255,0.18)';
+          if (padX > 0) {
+            for (let c = 0; c < cols - 1; c++) {
+              const gx = (offX + (c + 1) * cw + c * padX) * zoom;
+              ctx.fillRect(dx + gx, dy + offY * zoom, padX * zoom, (ih - 2 * offY) * zoom);
+            }
+          }
+          if (padY > 0) {
+            for (let r = 0; r < rows - 1; r++) {
+              const gy = (offY + (r + 1) * ch + r * padY) * zoom;
+              ctx.fillRect(dx + offX * zoom, dy + gy, (iw - 2 * offX) * zoom, padY * zoom);
+            }
+          }
         }
+
         ctx.setLineDash([]);
         ctx.fillStyle = '#ffb347';
         ctx.font = 'bold 11px Fredoka, sans-serif';
@@ -1279,7 +1327,9 @@
         let n = 1;
         for (let r = 0; r < rows; r++) {
           for (let c = 0; c < cols; c++) {
-            ctx.fillText(String(n++), dx + c * cw + 4, dy + r * ch + 2);
+            const fx = (offX + c * (cw + padX)) * zoom;
+            const fy = (offY + r * (ch + padY)) * zoom;
+            ctx.fillText(String(n++), dx + fx + 4, dy + fy + 2);
           }
         }
       } else if (sliceMode === 'auto' && sliceChildren) {
