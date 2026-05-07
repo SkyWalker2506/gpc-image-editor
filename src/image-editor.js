@@ -848,7 +848,14 @@
       });
       ro.observe(ui.canvas);
 
-      setActiveTool('crop');
+      // Apply caller-requested initial state (e.g. animation strip auto-opens slice/anim mode).
+      if (opts.initialSliceMode && ['grid','anim','auto'].includes(opts.initialSliceMode)) {
+        sliceMode = opts.initialSliceMode;
+      }
+      if (opts.initialSliceParams && typeof opts.initialSliceParams === 'object') {
+        sliceParams = Object.assign({}, sliceParams, opts.initialSliceParams);
+      }
+      setActiveTool(opts.initialTool && ['crop','rectsel','lasso','bgRemove','eyedrop','brush','erase','fill','line','rect','circle','gradient','slice'].includes(opts.initialTool) ? opts.initialTool : 'crop');
       renderSlicePanel();
       syncControls();
     }
