@@ -656,7 +656,8 @@
             </div>
             <div data-ie="slice-body"></div>
             <div class="gpc-ie-row"><button data-ie="slice-compute">Preview slices</button></div>
-            <div class="gpc-ie-row"><button data-ie="slice-apply" class="gpc-ie-btn-primary">Apply slice</button></div>
+            <div class="gpc-ie-row"><button data-ie="slice-apply" class="gpc-ie-btn-primary">&#x1F4BE; Publish to asset</button></div>
+            <div class="gpc-ie-row" data-ie="slice-status" style="display:none;font-size:12px;color:#4caf50;padding:4px 0"></div>
             <div class="gpc-ie-row"><button data-ie="slice-zip">Download ZIP</button></div>
             <div class="gpc-ie-row" data-ie="slice-anim-controls" style="display:none">
               <button data-ie="anim-play">▶ Play</button>
@@ -746,6 +747,7 @@
         sliceBody: $('[data-ie="slice-body"]'),
         sliceCompute: $('[data-ie="slice-compute"]'),
         sliceApply:   $('[data-ie="slice-apply"]'),
+        sliceStatus:  $('[data-ie="slice-status"]'),
         sliceZip:     $('[data-ie="slice-zip"]'),
         sliceModeBtns: root.querySelectorAll('[data-ie-smode]'),
         animCtrls: $('[data-ie="slice-anim-controls"]'),
@@ -1169,25 +1171,50 @@
       const baseName = (opts.assetName || opts.sourceName || 'sprite').replace(/\.[a-z0-9]+$/i, '');
       const childPayload = [];
       let pendingBlobs = children.length;
-      const finish = () => {
-        if (typeof opts.onSliceApply === 'function') {
-          opts.onSliceApply({
-            mode: sliceMode,
-            params: sliceMode === 'anim'
-              ? { ...sliceParams, _perCell: true, _cells: animCells.map(c => ({ ...c })), outputW: animOutputW, outputH: animOutputH }
-              : { ...sliceParams },
-            source: { name: baseName, w: img.naturalWidth, h: img.naturalHeight },
-            children: childPayload
-          });
-        } else {
-          // No host handler → offer ZIP download as fallback.
-          downloadSliceZip(childPayload, baseName);
-        }
+
+      const buildStripAndFinish = () => {
+        childPayload.sort((a, b) => (a.frameIndex ?? 0) - (b.frameIndex ?? 0));
+        const fW = childPayload[0].w, fH = childPayload[0].h;
+        const strip = document.createElement('canvas');
+        strip.width = fW * childPayload.length;
+        strip.height = fH;
+        const sCtx = strip.getContext('2d');
+        let stripDone = 0;
+        childPayload.forEach((ch, idx) => {
+          const tmpImg = new Image();
+          tmpImg.onload = () => {
+            sCtx.drawImage(tmpImg, idx * fW, 0, fW, fH);
+            stripDone++;
+            if (stripDone === childPayload.length) {
+              strip.toBlob(stripBlob => {
+                const payload = {
+                  mode: sliceMode,
+                  params: sliceMode === 'anim'
+                    ? { ...sliceParams, _perCell: true, _cells: animCells.map(c => ({ ...c })), outputW: animOutputW, outputH: animOutputH }
+                    : { ...sliceParams },
+                  source: { name: baseName, w: img.naturalWidth, h: img.naturalHeight },
+                  children: childPayload,
+                  stripBlob,
+                  stripDataUrl: strip.toDataURL('image/png'),
+                  frameW: fW,
+                  frameH: fH,
+                  frames: childPayload.length
+                };
+                if (typeof opts.onSliceApply === 'function') {
+                  opts.onSliceApply(payload);
+                } else {
+                  // No host handler → offer ZIP download as fallback.
+                  downloadSliceZip(childPayload, baseName);
+                }
+              }, 'image/png');
+            }
+          };
+          tmpImg.src = ch.dataUrl;
+        });
       };
+
       children.forEach((c, i) => {
-        const name = sliceMode === 'anim'
-          ? `${baseName}-frame-${i}.png`
-          : `${baseName}-frame-${i}.png`;
+        const name = `${baseName}-frame-${i}.png`;
         const dataUrl = c.canvas.toDataURL('image/png');
         c.canvas.toBlob((blob) => {
           childPayload.push({
@@ -1197,11 +1224,7 @@
             frameIndex: c.frameIndex !== undefined ? c.frameIndex : i
           });
           pendingBlobs--;
-          if (pendingBlobs === 0) {
-            // preserve frame order
-            childPayload.sort((a, b) => (a.frameIndex ?? 0) - (b.frameIndex ?? 0));
-            finish();
-          }
+          if (pendingBlobs === 0) buildStripAndFinish();
         }, 'image/png');
       });
     }
