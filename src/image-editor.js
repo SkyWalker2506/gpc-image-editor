@@ -480,18 +480,46 @@
     container.classList.add('gpc-ie-root');
 
     const ui = buildUI(container);
+
+    // Wire accordion: clicking a panel-title toggles collapsed on the parent panel
+    container.querySelectorAll('.gpc-ie-panel-title').forEach(titleEl => {
+      titleEl.addEventListener('click', () => {
+        const panel = titleEl.closest('.gpc-ie-panel');
+        if (panel) panel.classList.toggle('collapsed');
+      });
+    });
+
     bindUI();
     setSrc(opts.src || '');
 
     function setSrc(src) {
       imgReady = false;
-      img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => { imgReady = true; fitView(); render(); };
-      img.onerror = () => { imgReady = false; render(); };
-      img.src = src || '';
       sliceChildren = null;
       stopAnimPreview();
+
+      function tryLoad(useCors) {
+        const el = new Image();
+        if (useCors) el.crossOrigin = 'anonymous';
+        el.onload = () => {
+          img = el;
+          imgReady = true;
+          requestAnimationFrame(() => { fitView(); render(); });
+        };
+        el.onerror = () => {
+          if (useCors) {
+            // Retry without CORS (image visible but canvas pixel-read blocked)
+            tryLoad(false);
+          } else {
+            imgReady = false;
+            render();
+          }
+        };
+        // Cache-bust to avoid stale tainted-canvas from a prior no-cors load
+        el.src = src ? (src + (src.includes('?') ? '&' : '?') + '_iecb=' + Date.now()) : '';
+      }
+
+      img = new Image(); // reset immediately so render shows blank not stale
+      tryLoad(true);
     }
 
     function setEdits(next) {
@@ -585,50 +613,62 @@
             </div>
           </div>
 
-          <div class="gpc-ie-panel">
+          <div class="gpc-ie-panel collapsed">
             <div class="gpc-ie-panel-title">Resize</div>
-            <div class="gpc-ie-row"><label>Width</label><input type="number" data-ie="rw" min="1" step="1"></div>
-            <div class="gpc-ie-row"><label>Height</label><input type="number" data-ie="rh" min="1" step="1"></div>
-            <div class="gpc-ie-row"><label><input type="checkbox" data-ie="rlock" checked> Lock aspect</label></div>
-            <div class="gpc-ie-row"><button data-ie="fit-bbox">Fit to crop</button></div>
+            <div class="gpc-ie-panel-body">
+              <div class="gpc-ie-row"><label>Width</label><input type="number" data-ie="rw" min="1" step="1"></div>
+              <div class="gpc-ie-row"><label>Height</label><input type="number" data-ie="rh" min="1" step="1"></div>
+              <div class="gpc-ie-row"><label><input type="checkbox" data-ie="rlock" checked> Lock aspect</label></div>
+              <div class="gpc-ie-row"><button data-ie="fit-bbox">Fit to crop</button></div>
+            </div>
           </div>
-          <div class="gpc-ie-panel">
+          <div class="gpc-ie-panel collapsed">
             <div class="gpc-ie-panel-title">Rotate</div>
-            <div class="gpc-ie-row"><label>Angle</label>
-              <input type="range" data-ie="rot" min="-180" max="180" step="1" value="0">
-              <input type="number" data-ie="rot-num" min="-180" max="180" step="1" value="0" style="width:64px">
+            <div class="gpc-ie-panel-body">
+              <div class="gpc-ie-row"><label>Angle</label>
+                <input type="range" data-ie="rot" min="-180" max="180" step="1" value="0">
+                <input type="number" data-ie="rot-num" min="-180" max="180" step="1" value="0" style="width:64px">
+              </div>
             </div>
           </div>
-          <div class="gpc-ie-panel">
+          <div class="gpc-ie-panel collapsed">
             <div class="gpc-ie-panel-title">Adjust</div>
-            <div class="gpc-ie-row"><label>Brightness</label><input type="range" data-ie="f-bri" min="0" max="2" step="0.01" value="1"></div>
-            <div class="gpc-ie-row"><label>Contrast</label><input type="range" data-ie="f-con" min="0" max="2" step="0.01" value="1"></div>
-            <div class="gpc-ie-row"><label>Saturate</label><input type="range" data-ie="f-sat" min="0" max="2" step="0.01" value="1"></div>
-            <div class="gpc-ie-row"><label>Hue</label><input type="range" data-ie="f-hue" min="-180" max="180" step="1" value="0"></div>
-          </div>
-          <div class="gpc-ie-panel">
-            <div class="gpc-ie-panel-title">Color Palette</div>
-            <div class="gpc-ie-row"><label>Active</label><input type="color" data-ie="pal-color" value="#ff0055"><input type="number" data-ie="pal-stroke" min="1" max="64" step="1" value="4" title="Stroke/brush width" style="width:48px"></div>
-            <div class="gpc-ie-swatches" data-ie="pal-swatches"></div>
-            <div class="gpc-ie-panel-title" style="margin-top:6px;font-size:9px">Recent</div>
-            <div class="gpc-ie-swatches" data-ie="pal-history"></div>
-          </div>
-          <div class="gpc-ie-panel">
-            <div class="gpc-ie-panel-title">Shape Options</div>
-            <div class="gpc-ie-row"><label><input type="checkbox" data-ie="shape-fill"> Filled</label></div>
-            <div class="gpc-ie-row"><label>Grad type</label>
-              <select data-ie="grad-type"><option value="linear">Linear</option><option value="radial">Radial</option></select>
+            <div class="gpc-ie-panel-body">
+              <div class="gpc-ie-row"><label>Brightness</label><input type="range" data-ie="f-bri" min="0" max="2" step="0.01" value="1"></div>
+              <div class="gpc-ie-row"><label>Contrast</label><input type="range" data-ie="f-con" min="0" max="2" step="0.01" value="1"></div>
+              <div class="gpc-ie-row"><label>Saturate</label><input type="range" data-ie="f-sat" min="0" max="2" step="0.01" value="1"></div>
+              <div class="gpc-ie-row"><label>Hue</label><input type="range" data-ie="f-hue" min="-180" max="180" step="1" value="0"></div>
             </div>
-            <div class="gpc-ie-row"><label>Grad A</label><input type="color" data-ie="grad-a" value="#ffffff"></div>
-            <div class="gpc-ie-row"><label>Grad B</label><input type="color" data-ie="grad-b" value="#000000"></div>
           </div>
-          <div class="gpc-ie-panel" data-ie-pane="layers">
+          <div class="gpc-ie-panel collapsed">
+            <div class="gpc-ie-panel-title">Color Palette</div>
+            <div class="gpc-ie-panel-body">
+              <div class="gpc-ie-row"><label>Active</label><input type="color" data-ie="pal-color" value="#ff0055"><input type="number" data-ie="pal-stroke" min="1" max="64" step="1" value="4" title="Stroke/brush width" style="width:48px"></div>
+              <div class="gpc-ie-swatches" data-ie="pal-swatches"></div>
+              <div class="gpc-ie-panel-title" style="margin-top:6px;font-size:9px;cursor:default" onclick="event.stopPropagation()">Recent</div>
+              <div class="gpc-ie-swatches" data-ie="pal-history"></div>
+            </div>
+          </div>
+          <div class="gpc-ie-panel collapsed">
+            <div class="gpc-ie-panel-title">Shape Options</div>
+            <div class="gpc-ie-panel-body">
+              <div class="gpc-ie-row"><label><input type="checkbox" data-ie="shape-fill"> Filled</label></div>
+              <div class="gpc-ie-row"><label>Grad type</label>
+                <select data-ie="grad-type"><option value="linear">Linear</option><option value="radial">Radial</option></select>
+              </div>
+              <div class="gpc-ie-row"><label>Grad A</label><input type="color" data-ie="grad-a" value="#ffffff"></div>
+              <div class="gpc-ie-row"><label>Grad B</label><input type="color" data-ie="grad-b" value="#000000"></div>
+            </div>
+          </div>
+          <div class="gpc-ie-panel collapsed" data-ie-pane="layers">
             <div class="gpc-ie-panel-title">Layers</div>
-            <div data-ie="layer-list"></div>
-            <div class="gpc-ie-row" style="display:flex;gap:4px">
-              <button data-ie="layer-add" title="Add layer" style="flex:1">+ Add</button>
-              <button data-ie="layer-del" title="Delete active" style="flex:1">− Del</button>
-              <button data-ie="layer-flat" title="Flatten all to base" style="flex:1">⌂ Flat</button>
+            <div class="gpc-ie-panel-body">
+              <div data-ie="layer-list"></div>
+              <div class="gpc-ie-row" style="display:flex;gap:4px">
+                <button data-ie="layer-add" title="Add layer" style="flex:1">+ Add</button>
+                <button data-ie="layer-del" title="Delete active" style="flex:1">− Del</button>
+                <button data-ie="layer-flat" title="Flatten all to base" style="flex:1">⌂ Flat</button>
+              </div>
             </div>
           </div>
         </div>`;
