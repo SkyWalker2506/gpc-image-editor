@@ -434,7 +434,7 @@
     let imgReady = false;
     let edits = normalizeEdits(opts.edits || {});
     let aspect = 'free';
-    let zoom = 1;
+    let zoom = 0;
     let pan = { x: 0, y: 0 };
     let dragging = null;
     let cropDragOrig = null;
@@ -494,6 +494,7 @@
 
     function setSrc(src) {
       imgReady = false;
+      zoom = 0;  // reset so ResizeObserver re-runs fitView when modal opens
       sliceChildren = null;
       stopAnimPreview();
 
@@ -503,7 +504,13 @@
         el.onload = () => {
           img = el;
           imgReady = true;
-          requestAnimationFrame(() => { fitView(); render(); });
+          // Only fit+render immediately if the canvas has real dimensions.
+          // If the modal is still hidden (0×0), the ResizeObserver will call
+          // fitView()+render() once the modal becomes visible.
+          const _cv = ui ? ui.canvas : null;
+          if (_cv && _cv.clientWidth > 0 && _cv.clientHeight > 0) {
+            requestAnimationFrame(() => { fitView(); render(); });
+          }
         };
         el.onerror = () => {
           if (useCors) {
@@ -836,7 +843,7 @@
         fitCanvasBuffer();
         // If the canvas just got real dimensions (e.g. modal opened from display:none),
         // and the image is ready but zoom was never computed, run fitView first.
-        if (imgReady && zoom < 0.001) fitView();
+        if (imgReady && zoom < 0.05) fitView();
         render();
       });
       ro.observe(ui.canvas);
