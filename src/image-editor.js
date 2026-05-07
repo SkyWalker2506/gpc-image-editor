@@ -832,7 +832,13 @@
       window.addEventListener('pointerup', onPointerUp);
       window.addEventListener('keydown', onKey);
 
-      const ro = new ResizeObserver(() => { fitCanvasBuffer(); render(); });
+      const ro = new ResizeObserver(() => {
+        fitCanvasBuffer();
+        // If the canvas just got real dimensions (e.g. modal opened from display:none),
+        // and the image is ready but zoom was never computed, run fitView first.
+        if (imgReady && zoom < 0.001) fitView();
+        render();
+      });
       ro.observe(ui.canvas);
 
       setActiveTool('crop');
