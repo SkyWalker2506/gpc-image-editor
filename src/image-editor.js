@@ -1151,9 +1151,24 @@
         const cy = dy + cr.y * zoom;
         const cw = cr.w * zoom;
         const ch = cr.h * zoom;
+        // Draw dark overlay. Then punch out crop area and redraw image there so
+        // image pixels are not erased by clearRect.
         ctx.fillStyle = 'rgba(0,0,0,0.45)';
         ctx.fillRect(0, 0, cv.width / dpr, cv.height / dpr);
         ctx.clearRect(cx, cy, cw, ch);
+        // Redraw image inside the crop window so pixels are visible.
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(cx, cy, cw, ch);
+        ctx.clip();
+        const fs2 = buildFilterString(edits.filter);
+        if (fs2) ctx.filter = fs2;
+        const previewCv2 = bakedSource();
+        ctx.drawImage(previewCv2, 0, 0, previewCv2.width, previewCv2.height,
+                      dx + (edits.crop ? edits.crop.x * zoom : 0),
+                      dy + (edits.crop ? edits.crop.y * zoom : 0),
+                      previewCv2.width * zoom, previewCv2.height * zoom);
+        ctx.restore();
         ctx.strokeStyle = '#ffb347';
         ctx.lineWidth = 1.5;
         ctx.setLineDash([5, 4]);
