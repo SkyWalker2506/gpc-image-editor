@@ -584,6 +584,7 @@
 
     function destroy() {
       stopAnimPreview();
+      window.removeEventListener('keydown', onKey);
       container.innerHTML = '';
       container.classList.remove('gpc-ie-root');
     }
