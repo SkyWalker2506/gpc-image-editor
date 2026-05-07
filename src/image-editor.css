@@ -115,7 +115,7 @@
   box-sizing: border-box;
 }
 .gpc-ie-panel {
-  margin-bottom: 14px;
+  margin-bottom: 8px;
   padding-bottom: 10px;
   border-bottom: 1px solid var(--ie-line);
 }
@@ -179,8 +179,41 @@
   flex: 1; padding: 4px 0; font-size: 10px;
   background: var(--ie-bg); border: 1px solid var(--ie-line-str);
 }
-[data-ie-tool], [data-ie-smode] {
+/* Tool buttons: icon on top, label below */
+[data-ie-tool] {
+  display: flex !important;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 36px;
+  padding: 4px 6px !important;
+  position: relative;
+  transition: background 0.15s;
+}
+[data-ie-tool] svg { width: 16px; height: 16px; flex-shrink: 0; }
+[data-ie-tool] span { font-size: 9px; line-height: 1; opacity: 0.75; letter-spacing: 0.3px; }
+[data-ie-tool].active {
+  background: var(--ie-accent) !important;
+  color: #1a1300 !important;
+  outline: 2px solid var(--ie-accent-strong);
+  outline-offset: -1px;
+}
+[data-ie-tool].active span { opacity: 1; }
+[data-ie-tool]:hover { background: #3a4055; }
+[data-ie-smode] {
   min-width: 26px; padding: 3px 5px !important;
+}
+/* Separator between toolbar groups */
+.gpc-ie-sep {
+  width: 1px;
+  height: 28px;
+  background: rgba(255,255,255,0.12);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+/* Responsive wrap */
+@media (max-width: 1200px) {
+  .gpc-ie-toolbar { flex-wrap: wrap; }
 }
 [data-ie-pane="slice"] [data-ie="slice-apply"] {
   background: var(--ie-accent) !important; color: #1a1300 !important;

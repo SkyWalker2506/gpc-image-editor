@@ -593,46 +593,49 @@
       const html = `
         <div class="gpc-ie-toolbar">
           <div class="gpc-ie-group">
-            <label>Tool</label>
-            <button data-ie-tool="crop"      title="Crop / select (C)">▭</button>
-            <button data-ie-tool="rectsel"   title="Rect Select (M)">⊟</button>
-            <button data-ie-tool="lasso"     title="Lasso Select (L)">◌</button>
-            <button data-ie-tool="bgRemove"  title="Magic-wand bg remove (W)">✦</button>
-            <button data-ie-tool="eyedrop"   title="Eyedropper (I)">⊙</button>
-            <button data-ie-tool="brush"     title="Brush (B)">✎</button>
-            <button data-ie-tool="erase"     title="Eraser (E)">⌫</button>
-            <button data-ie-tool="fill"      title="Fill bucket (G)">▣</button>
-            <button data-ie-tool="line"      title="Line (U)">╱</button>
-            <button data-ie-tool="rect"      title="Rectangle shape (R)">▢</button>
-            <button data-ie-tool="circle"    title="Circle shape (O)">◯</button>
-            <button data-ie-tool="gradient"  title="Gradient fill (D)">◐</button>
-            <button data-ie-tool="slice"     title="Slice mode (S)">⊞</button>
+            <button data-ie-tool="crop"      title="Crop / select (C)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 1v10a2 2 0 002 2h10M13 15V5a2 2 0 00-2-2H1"/></svg><span>Crop</span></button>
+            <button data-ie-tool="rectsel"   title="Rect Select (M)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="3 2"><rect x="2" y="2" width="12" height="12" rx="1"/></svg><span>Select</span></button>
+            <button data-ie-tool="lasso"     title="Lasso Select (L)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 3c-3 0-5 1.5-5 4s2 4 5 4 5-1.5 5-4c0-1-1-2-2-1l-1 3"/></svg><span>Lasso</span></button>
+            <button data-ie-tool="bgRemove"  title="Magic-wand bg remove (W)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M7 9l6 6M3 3l2 2M8 2l1 2M13 3l-2 1M14 8l-2 1M2 8l2-1"/><circle cx="5.5" cy="5.5" r="2.5"/></svg><span>Wand</span></button>
+            <button data-ie-tool="eyedrop"   title="Eyedropper (I)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3a2.8 2.8 0 014 4l-1 1-4-4 1-1zM9 5l-6 6-1 3 3-1 6-6-2-2z"/></svg><span>Eye</span></button>
+            <button data-ie-tool="brush"     title="Brush (B)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2 2-8 8-3 1 1-3 8-8z"/><path d="M3 14c1-1 2-1 2 0s-1 1-2 1z" fill="currentColor" stroke="none"/></svg><span>Brush</span></button>
+            <button data-ie-tool="erase"     title="Eraser (E)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 5L7 11l-4-4 6-6 4 4z"/><path d="M3 11l2 2H2l1-2z"/><line x1="1" y1="15" x2="15" y2="15"/></svg><span>Erase</span></button>
+            <button data-ie-tool="fill"      title="Fill bucket (G)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 14l4-4 6-6-2-2-6 6-2 2 2 2v2zM14 11c0 1.1-.9 2-2 2s-2-.9-2-2c0-1.5 2-4 2-4s2 2.5 2 4z" fill="currentColor" fill-opacity="0.2"/><path d="M4 10l6-6M2 14l4-4"/></svg><span>Fill</span></button>
+            <button data-ie-tool="line"      title="Line (U)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="14" x2="14" y2="2"/></svg><span>Line</span></button>
+            <button data-ie-tool="rect"      title="Rectangle shape (R)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="4" width="12" height="8" rx="1"/></svg><span>Rect</span></button>
+            <button data-ie-tool="circle"    title="Circle shape (O)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/></svg><span>Circle</span></button>
+            <button data-ie-tool="gradient"  title="Gradient fill (D)"><svg width="16" height="16" viewBox="0 0 16 16"><defs><linearGradient id="ie-g" x1="0" x2="1"><stop offset="0" stop-color="currentColor" stop-opacity="0.1"/><stop offset="1" stop-color="currentColor" stop-opacity="1"/></linearGradient></defs><rect x="2" y="3" width="12" height="10" rx="1" fill="url(#ie-g)" stroke="currentColor" stroke-width="1.5"/></svg><span>Grad</span></button>
+            <button data-ie-tool="slice"     title="Slice mode (S)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1"/><line x1="7" y1="2" x2="7" y2="14"/><line x1="2" y1="7" x2="14" y2="7"/></svg><span>Slice</span></button>
           </div>
+          <div class="gpc-ie-sep"></div>
           <div class="gpc-ie-group">
             <label>Aspect</label>
             <select data-ie="aspect">${ASPECTS.map(a => `<option value="${a.id}">${a.label}</option>`).join('')}</select>
           </div>
+          <div class="gpc-ie-sep"></div>
           <div class="gpc-ie-group">
-            <button data-ie="rot-l" title="Rotate -90">⟲ 90</button>
-            <button data-ie="rot-r" title="Rotate +90">⟳ 90</button>
+            <button data-ie="rot-l" title="Rotate -90">⟲ -90</button>
+            <button data-ie="rot-r" title="Rotate +90">⟳ +90</button>
             <button data-ie="flip-h" title="Flip horizontal">⇋ H</button>
             <button data-ie="flip-v" title="Flip vertical">⇅ V</button>
           </div>
+          <div class="gpc-ie-sep"></div>
           <div class="gpc-ie-group">
-            <button data-ie="undo" title="Undo">⟲ Undo</button>
-            <button data-ie="redo" title="Redo">⟳ Redo</button>
+            <button data-ie="undo" title="Undo (Cmd+Z)">⟲ Undo</button>
+            <button data-ie="redo" title="Redo (Cmd+Shift+Z)">⟳ Redo</button>
             <button data-ie="reset" title="Reset all edits">↺ Reset</button>
           </div>
+          <div class="gpc-ie-sep"></div>
           <div class="gpc-ie-group">
-            <button data-ie="copy"  title="Copy selection (Cmd/Ctrl+C)">⎘</button>
-            <button data-ie="paste" title="Paste (Cmd/Ctrl+V)">⎗</button>
-            <button data-ie="cut"   title="Cut selection (Cmd/Ctrl+X)">✂</button>
-            <button data-ie="delsel" title="Delete selection (Del)">⊘</button>
+            <button data-ie="copy"  title="Copy (Cmd+C)">⎘ Copy</button>
+            <button data-ie="paste" title="Paste (Cmd+V)">⎗ Paste</button>
+            <button data-ie="cut"   title="Cut (Cmd+X)">✂ Cut</button>
+            <button data-ie="delsel" title="Delete selection (Del)">⊘ Del</button>
           </div>
           <div class="gpc-ie-group gpc-ie-grow"></div>
           <div class="gpc-ie-group">
             <button data-ie="cancel" class="gpc-ie-btn-ghost">Cancel</button>
-            <button data-ie="apply"  class="gpc-ie-btn-primary">Apply</button>
+            <button data-ie="apply"  class="gpc-ie-btn-primary" style="padding:6px 18px;font-size:13px">Apply</button>
           </div>
         </div>
         <div class="gpc-ie-stage">
