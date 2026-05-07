@@ -1,4 +1,4 @@
-/* gpc-image-editor v0.5.0 — non-destructive in-browser mini photoshop for game sprites.
+/* gpc-image-editor v0.5.1 — non-destructive in-browser mini photoshop for game sprites.
  *
  * Companion module: video-to-strip.js exposes
  *   window.ImageEditor.mountVideoToStrip({ container, videoSrc, sourceName, onApply, onCancel })
@@ -565,8 +565,10 @@
             render();
           }
         };
-        // Cache-bust to avoid stale tainted-canvas from a prior no-cors load
-        el.src = src ? (src + (src.includes('?') ? '&' : '?') + '_iecb=' + Date.now()) : '';
+        // Cache-bust to avoid stale tainted-canvas from a prior no-cors load.
+        // blob: and data: URLs do not support query strings — skip cache-bust for those.
+        const _isBlobOrData = src && (src.startsWith('blob:') || src.startsWith('data:'));
+        el.src = src ? (_isBlobOrData ? src : (src + (src.includes('?') ? '&' : '?') + '_iecb=' + Date.now())) : '';
       }
 
       img = new Image(); // reset immediately so render shows blank not stale
