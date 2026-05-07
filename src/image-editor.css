@@ -64,6 +64,15 @@
   background: transparent;
   border-color: var(--ie-line-str);
 }
+.gpc-ie-toolbar .gpc-ie-btn-back {
+  background: #3a2e22;
+  color: #d4b896;
+  border-color: #5c4633;
+}
+.gpc-ie-toolbar .gpc-ie-btn-back:hover {
+  background: #4d3d2e;
+  color: #e8d0b0;
+}
 
 .gpc-ie-toolbar select {
   background: var(--ie-bg-hi);

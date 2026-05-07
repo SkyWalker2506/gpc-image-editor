@@ -634,6 +634,7 @@
           </div>
           <div class="gpc-ie-group gpc-ie-grow"></div>
           <div class="gpc-ie-group">
+            <button data-ie="back"   class="gpc-ie-btn-back" title="Asset Browser'a dön">&#8592; Geri</button>
             <button data-ie="cancel" class="gpc-ie-btn-ghost">Cancel</button>
             <button data-ie="apply"  class="gpc-ie-btn-primary" style="padding:6px 18px;font-size:13px">Apply</button>
           </div>
@@ -742,7 +743,7 @@
         flipH: $('[data-ie="flip-h"]'), flipV: $('[data-ie="flip-v"]'),
         undo: $('[data-ie="undo"]'), redo: $('[data-ie="redo"]'),
         reset: $('[data-ie="reset"]'), fit: $('[data-ie="fit-bbox"]'),
-        cancel: $('[data-ie="cancel"]'), apply: $('[data-ie="apply"]'),
+        back: $('[data-ie="back"]'), cancel: $('[data-ie="cancel"]'), apply: $('[data-ie="apply"]'),
         toolBtns: root.querySelectorAll('[data-ie-tool]'),
         toolTitle: $('[data-ie="tool-title"]'),
         toolBody:  $('[data-ie="tool-body"]'),
@@ -791,6 +792,7 @@
       ui.fit.addEventListener('click', () => {
         if (edits.crop) { edits.resize = { w: edits.crop.w, h: edits.crop.h }; commit(); syncControls(); }
       });
+      if (ui.back) ui.back.addEventListener('click', () => { if (typeof opts.onCancel === 'function') opts.onCancel(); });
       ui.cancel.addEventListener('click', () => { if (typeof opts.onCancel === 'function') opts.onCancel(); });
       ui.apply.addEventListener('click', () => {
         if (typeof opts.onApply !== 'function') return;
