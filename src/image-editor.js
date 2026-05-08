@@ -1,4 +1,4 @@
-/* gpc-image-editor v0.5.1 — non-destructive in-browser mini photoshop for game sprites.
+/* gpc-image-editor v0.5.2 — non-destructive in-browser mini photoshop for game sprites.
  *
  * Companion module: video-to-strip.js exposes
  *   window.ImageEditor.mountVideoToStrip({ container, videoSrc, sourceName, onApply, onCancel })
@@ -501,6 +501,7 @@
     let sliceChildren = null;       // last computed children
     let sliceAnimFrame = 0;
     let sliceAnimTimer = null;
+    let _resizeObserver = null;
 
     // Per-cell anim state (used when sliceMode === 'anim')
     let animCells = [];
@@ -587,6 +588,9 @@
     function destroy() {
       stopAnimPreview();
       window.removeEventListener('keydown', onKey);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      if (_resizeObserver) { _resizeObserver.disconnect(); _resizeObserver = null; }
       container.innerHTML = '';
       container.classList.remove('gpc-ie-root');
     }
@@ -802,7 +806,7 @@
         const e = getEdits();
         let baked = null;
         try { baked = applyEditsToCanvas(img, e); } catch (_) {}
-        if (!baked) { opts.onApply({ edits: e, pngBlob: null, pngDataUrl: null, width: 0, height: 0 }); return; }
+        if (!baked || baked.width === 0 || baked.height === 0) { opts.onApply({ edits: e, pngBlob: null, pngDataUrl: null, width: 0, height: 0 }); return; }
         const w = baked.width, h = baked.height;
         let dataUrl = null;
         try { dataUrl = baked.toDataURL('image/png'); } catch (_) {}
@@ -893,14 +897,14 @@
       window.addEventListener('pointerup', onPointerUp);
       window.addEventListener('keydown', onKey);
 
-      const ro = new ResizeObserver(() => {
+      _resizeObserver = new ResizeObserver(() => {
         fitCanvasBuffer();
         // If the canvas just got real dimensions (e.g. modal opened from display:none),
-        // and the image is ready but zoom was never computed, run fitView first.
-        if (imgReady && zoom < 0.05) fitView();
+        // and the image is ready but zoom was never computed (still 0), run fitView first.
+        if (imgReady && zoom <= 0) fitView();
         render();
       });
-      ro.observe(ui.canvas);
+      _resizeObserver.observe(ui.canvas);
 
       // Apply caller-requested initial state (e.g. animation strip auto-opens slice/anim mode).
       if (opts.initialSliceMode && ['grid','anim','auto'].includes(opts.initialSliceMode)) {
@@ -1047,7 +1051,17 @@
       if (sliceMode === 'anim') {
         const aDw = q('[data-ie="s-anim-dw"]'); if (aDw) aDw.addEventListener('input', e => { animDefaultCellW = Math.max(1, +e.target.value); buildAnimCells(); renderAnimCellList(); sliceChildren = null; render(); });
         const aDh = q('[data-ie="s-anim-dh"]'); if (aDh) aDh.addEventListener('input', e => { animDefaultCellH = Math.max(1, +e.target.value); buildAnimCells(); renderAnimCellList(); sliceChildren = null; render(); });
-        const aCnt = q('[data-ie="s-anim-count"]'); if (aCnt) aCnt.addEventListener('input', e => { animFrameCount = Math.max(1, +e.target.value); buildAnimCells(); renderAnimCellList(); sliceChildren = null; render(); });
+        const aCnt = q('[data-ie="s-anim-count"]'); if (aCnt) aCnt.addEventListener('input', e => {
+          animFrameCount = Math.max(1, +e.target.value);
+          // Auto-refit cell width when frame count changes (strip width / N).
+          if (imgReady && img.naturalWidth > 0) {
+            animDefaultCellW = Math.max(1, Math.floor(img.naturalWidth / animFrameCount));
+            animDefaultCellH = img.naturalHeight || animDefaultCellH;
+            const dwEl = q('[data-ie="s-anim-dw"]'); if (dwEl) dwEl.value = animDefaultCellW;
+            const dhEl = q('[data-ie="s-anim-dh"]'); if (dhEl) dhEl.value = animDefaultCellH;
+          }
+          buildAnimCells(); renderAnimCellList(); sliceChildren = null; render();
+        });
         const aFit = q('[data-ie="s-anim-autofit"]'); if (aFit) aFit.addEventListener('click', () => {
           if (!imgReady) return;
           animDefaultCellW = Math.max(1, Math.floor(img.naturalWidth / animFrameCount));
@@ -1358,11 +1372,11 @@
       const dy = pan.y - (ih * zoom) / 2;
 
       // Draw the source image with live filter+pixelOps preview.
+      // bakedSource() is called once and reused for both the main draw and crop overlay.
+      const previewCv = bakedSource();
       ctx.save();
       const fs = buildFilterString(edits.filter);
       if (fs) ctx.filter = fs;
-      // Bake to offscreen so pixelOps preview without mutating source.
-      const previewCv = bakedSource();
       ctx.drawImage(previewCv, 0, 0, previewCv.width, previewCv.height,
                     dx + (edits.crop ? edits.crop.x * zoom : 0),
                     dy + (edits.crop ? edits.crop.y * zoom : 0),
@@ -1383,18 +1397,17 @@
         ctx.fillStyle = 'rgba(0,0,0,0.45)';
         ctx.fillRect(0, 0, cv.width / dpr, cv.height / dpr);
         ctx.clearRect(cx, cy, cw, ch);
-        // Redraw image inside the crop window so pixels are visible.
+        // Redraw image inside the crop window so pixels are visible (reuse previewCv).
         ctx.save();
         ctx.beginPath();
         ctx.rect(cx, cy, cw, ch);
         ctx.clip();
         const fs2 = buildFilterString(edits.filter);
         if (fs2) ctx.filter = fs2;
-        const previewCv2 = bakedSource();
-        ctx.drawImage(previewCv2, 0, 0, previewCv2.width, previewCv2.height,
+        ctx.drawImage(previewCv, 0, 0, previewCv.width, previewCv.height,
                       dx + (edits.crop ? edits.crop.x * zoom : 0),
                       dy + (edits.crop ? edits.crop.y * zoom : 0),
-                      previewCv2.width * zoom, previewCv2.height * zoom);
+                      previewCv.width * zoom, previewCv.height * zoom);
         ctx.restore();
         ctx.strokeStyle = '#ffb347';
         ctx.lineWidth = 1.5;
@@ -1916,7 +1929,6 @@
     function onKey(ev) {
       const ae = document.activeElement;
       if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'SELECT' || ae.tagName === 'TEXTAREA')) return;
-      if (!container.contains(ae) && ae !== document.body) return;
       const cmd = ev.metaKey || ev.ctrlKey;
       if (cmd && ev.key.toLowerCase() === 'z') { ev.preventDefault(); if (ev.shiftKey) redoOp(); else undoOp(); return; }
       if (cmd && ev.key.toLowerCase() === 'y') { ev.preventDefault(); redoOp(); return; }
@@ -2056,7 +2068,7 @@
 
     function pushUndo() {
       undo.push(JSON.stringify(edits));
-      if (undo.length > 100) undo.shift();
+      if (undo.length > 50) undo.shift();
       redo.length = 0;
     }
     function commit() { pushUndo(); render(); fire(); syncControls(); }
