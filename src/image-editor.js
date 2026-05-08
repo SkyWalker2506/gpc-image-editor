@@ -1,4 +1,4 @@
-/* gpc-image-editor v0.5.2 — non-destructive in-browser mini photoshop for game sprites.
+/* gpc-image-editor v0.5.3 — non-destructive in-browser mini photoshop for game sprites.
  *
  * Companion module: video-to-strip.js exposes
  *   window.ImageEditor.mountVideoToStrip({ container, videoSrc, sourceName, onApply, onCancel })
@@ -1224,6 +1224,12 @@
                 };
                 if (typeof opts.onSliceApply === 'function') {
                   opts.onSliceApply(payload);
+                  // Show success status
+                  if (ui.sliceStatus) {
+                    ui.sliceStatus.textContent = `Applied ${childPayload.length} slices`;
+                    ui.sliceStatus.style.display = '';
+                    setTimeout(() => { if (ui.sliceStatus) ui.sliceStatus.style.display = 'none'; }, 3000);
+                  }
                 } else {
                   // No host handler → offer ZIP download as fallback.
                   downloadSliceZip(childPayload, baseName);
@@ -1833,6 +1839,8 @@
           newX = Math.max(0, newX);
         } else {
           const prev = animCells[o.cellIdx - 1];
+          const minX = prev.x + 1 + animPaddingX; // prev cell needs at least w=1
+          if (newX < minX) newX = minX;
           if (newX < prev.x + prev.w) {
             // Push: shrink previous cell's right edge to newX
             prev.w = Math.max(1, newX - prev.x - animPaddingX);
@@ -1840,7 +1848,11 @@
         }
         cell.x = newX;
         cell.w = Math.max(1, o.x + o.w - newX);
-        recomputeAnimCellPositions();
+        // Only recompute cells AFTER cellIdx — do NOT start from 1 which would
+        // overwrite the cell.x we just set for cellIdx > 0.
+        for (let i = o.cellIdx + 1; i < animCells.length; i++) {
+          animCells[i].x = animCells[i - 1].x + animCells[i - 1].w + animPaddingX;
+        }
         updateSelectedCellInputs();
         renderAnimCellList();
         sliceChildren = null;
@@ -2151,7 +2163,7 @@
   // script loaded first) by merging onto an existing namespace.
   const existing = root.ImageEditor || {};
   root.ImageEditor = Object.assign(existing, {
-    version: '0.5.2',
+    version: '0.5.3',
     mount,
     applyEditsToCanvas,
     compactEdits,
