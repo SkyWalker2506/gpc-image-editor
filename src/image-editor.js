@@ -456,6 +456,8 @@
 
     let img = new Image();
     let imgReady = false;
+    let _destroyed = false;
+    let _srcGen = 0;
     let edits = normalizeEdits(opts.edits || {});
     let aspect = 'free';
     let zoom = 0;
@@ -535,11 +537,13 @@
       zoom = 0;  // reset so ResizeObserver re-runs fitView when modal opens
       sliceChildren = null;
       stopAnimPreview();
+      const myGen = ++_srcGen;  // invalidate any in-flight loads from prior calls
 
       function tryLoad(useCors) {
         const el = new Image();
         if (useCors) el.crossOrigin = 'anonymous';
         el.onload = () => {
+          if (_destroyed || _srcGen !== myGen) return;  // stale load — discard
           img = el;
           imgReady = true;
           // If anim mode and cells still at default 256, auto-fit from image dimensions
@@ -554,10 +558,21 @@
           // fitView()+render() once the modal becomes visible.
           const _cv = ui ? ui.canvas : null;
           if (_cv && _cv.clientWidth > 0 && _cv.clientHeight > 0) {
-            requestAnimationFrame(() => { fitView(); render(); });
+            requestAnimationFrame(() => { if (!_destroyed) { fitView(); render(); } });
+          } else {
+            // Canvas not yet sized — poll until ResizeObserver fires or we timeout
+            let _tries = 0;
+            const _poll = () => {
+              if (_destroyed || _srcGen !== myGen) return;
+              const __cv = ui ? ui.canvas : null;
+              if (__cv && __cv.clientWidth > 0) { fitView(); render(); return; }
+              if (++_tries < 20) requestAnimationFrame(_poll);
+            };
+            requestAnimationFrame(_poll);
           }
         };
         el.onerror = () => {
+          if (_destroyed || _srcGen !== myGen) return;
           if (useCors) {
             // Retry without CORS (image visible but canvas pixel-read blocked)
             tryLoad(false);
@@ -586,6 +601,7 @@
     function getEdits() { return cloneEdits(edits); }
 
     function destroy() {
+      _destroyed = true;
       stopAnimPreview();
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('pointermove', onPointerMove);
@@ -898,6 +914,7 @@
       window.addEventListener('keydown', onKey);
 
       _resizeObserver = new ResizeObserver(() => {
+        if (_destroyed) return;
         fitCanvasBuffer();
         // If the canvas just got real dimensions (e.g. modal opened from display:none),
         // and the image is ready but zoom was never computed (still 0), run fitView first.
@@ -1123,8 +1140,13 @@
     }
 
     function recomputeAnimCellPositions() {
+      // cell[0].x is the anchor — never moved by this function.
       for (let i = 1; i < animCells.length; i++) {
         animCells[i].x = animCells[i - 1].x + animCells[i - 1].w + animPaddingX;
+      }
+      // Sync y from animPaddingY for all cells.
+      for (let i = 0; i < animCells.length; i++) {
+        animCells[i].y = animPaddingY;
       }
     }
 
@@ -1833,8 +1855,8 @@
           newX = Math.max(0, newX);
         } else {
           const prev = animCells[o.cellIdx - 1];
-          if (newX < prev.x + prev.w) {
-            // Push: shrink previous cell's right edge to newX
+          if (newX < prev.x + prev.w + animPaddingX) {
+            // Push: shrink previous cell's right edge so gap fits
             prev.w = Math.max(1, newX - prev.x - animPaddingX);
           }
         }
