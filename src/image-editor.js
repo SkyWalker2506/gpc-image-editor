@@ -1827,15 +1827,19 @@
         const o = cropDragOrig;
         const dx = ipt.x - o.pointerX;
         const cell = animCells[o.cellIdx];
-        // Clamp so cell.x doesn't go past previous cell's right edge
-        const prevRight = o.cellIdx > 0
-          ? animCells[o.cellIdx - 1].x + animCells[o.cellIdx - 1].w + animPaddingX
-          : 0;
         let newX = Math.round(o.x + dx);
-        newX = Math.max(prevRight, newX);
-        const newW = Math.max(1, o.x + o.w - newX);
+        if (o.cellIdx === 0) {
+          // First cell: clamp to image left edge
+          newX = Math.max(0, newX);
+        } else {
+          const prev = animCells[o.cellIdx - 1];
+          if (newX < prev.x + prev.w) {
+            // Push: shrink previous cell's right edge to newX
+            prev.w = Math.max(1, newX - prev.x - animPaddingX);
+          }
+        }
         cell.x = newX;
-        cell.w = newW;
+        cell.w = Math.max(1, o.x + o.w - newX);
         recomputeAnimCellPositions();
         updateSelectedCellInputs();
         renderAnimCellList();
