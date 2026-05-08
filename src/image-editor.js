@@ -2147,7 +2147,7 @@
   // script loaded first) by merging onto an existing namespace.
   const existing = root.ImageEditor || {};
   root.ImageEditor = Object.assign(existing, {
-    version: '0.4.0',
+    version: '0.5.2',
     mount,
     applyEditsToCanvas,
     compactEdits,
